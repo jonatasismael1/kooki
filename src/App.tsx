@@ -57,7 +57,9 @@ import { SharedRecipePage } from "./pages/SharedRecipePage";
 import { readableQuantity, scaleQuantity } from "./lib/product";
 import { ConfirmDialog, BottomSheet, LoadingButton, PromptDialog } from "./components/ui";
 import { PantrySuggestions } from "./components/pantry-suggestions";
+import { PwaUpdateBanner } from "./components/pwa-update-banner";
 import "./index.css";
+
 
 
 type Recipe = {
@@ -291,6 +293,7 @@ function App() {
           />
         </Routes>
       </BrowserRouter>
+      <PwaUpdateBanner />
       <ToastViewport />
     </AppContext.Provider>
   );

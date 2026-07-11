@@ -1,0 +1,63 @@
+name: Deploy Frontend (PWA)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      # Ignora commits que só tocam funções Supabase (já tratadas pelo outro workflow)
+      - "supabase/functions/**"
+      - "supabase/config.toml"
+      - ".github/workflows/deploy-supabase.yml"
+  # Permite disparar manualmente pelo painel do GitHub Actions
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    name: Lint → Typecheck → Build → Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # 1. Checkout
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      # 2. Node
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      # 3. Instalar dependências (modo CI — mais rápido e determinístico)
+      - name: Instalar dependências
+        run: npm ci
+
+      # 4. Linting
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      # 5. Typecheck
+      - name: Typecheck (TypeScript)
+        run: npm run typecheck
+
+      # 6. Build de produção — gera dist/ com sw.js e workbox assets do PWA
+      - name: Build de produção
+        run: npm run build
+        env:
+          # Injeta as variáveis de ambiente públicas (prefixo VITE_)
+          # Configure-as em Settings → Secrets and variables → Actions → Variables
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_COBALT_API_URL: ${{ vars.VITE_COBALT_API_URL }}
+
+      # 7. Deploy na Netlify via CLI
+      #    --prod faz o deploy ir direto para produção (não é um draft/preview)
+      - name: Deploy na Netlify (produção)
+        run: npx netlify-cli@latest deploy --dir=dist --prod --message "Deploy via GitHub Actions — ${{ github.sha }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

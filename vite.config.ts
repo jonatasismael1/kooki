@@ -261,7 +261,11 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: "autoUpdate",
+        // «prompt» permite que o app exiba um aviso antes de recarregar;
+        // o hook useRegisterSW lida com a lógica de atualização no App.tsx.
+        registerType: "prompt",
+        // Gera o arquivo sw.js e o manifesto no dist/
+        injectRegister: "auto",
         manifest: {
           name: "Kooki — Livro de Receitas Inteligente",
           short_name: "Kooki",
@@ -270,6 +274,9 @@ export default defineConfig(({ mode }) => {
           background_color: "#fbf8f4",
           display: "standalone",
           start_url: "/",
+          orientation: "portrait",
+          scope: "/",
+          lang: "pt-BR",
           icons: [
             {
               src: "/favicon.svg",
@@ -280,8 +287,47 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          navigateFallback: "/",
-          globPatterns: ["**/*.{js,css,html,svg,png}"],
+          // Assume controle imediatamente — sem precisar fechar todas as abas
+          skipWaiting: true,
+          clientsClaim: true,
+          // Remove caches de versões anteriores automaticamente
+          cleanupOutdatedCaches: true,
+          // Fallback offline para SPA
+          navigateFallback: "/index.html",
+          navigateFallbackDenylist: [/^\/api\//],
+          // Arquivos pré-cacheados no install
+          globPatterns: ["**/*.{js,css,html,svg,png,ico,woff2}"],
+          // Estratégia NetworkFirst para navegação (sempre busca versão nova)
+          runtimeCaching: [
+            {
+              urlPattern: /^\/(?!api\/)/,
+              handler: "NetworkFirst",
+              options: {
+                cacheName: "kooki-pages-v1",
+                networkTimeoutSeconds: 5,
+              },
+            },
+            {
+              urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/,
+              handler: "CacheFirst",
+              options: {
+                cacheName: "kooki-images-v1",
+                expiration: {
+                  maxEntries: 60,
+                  maxAgeSeconds: 30 * 24 * 60 * 60, // 30 dias
+                },
+              },
+            },
+            {
+              urlPattern: /fonts\.googleapis\.com/,
+              handler: "StaleWhileRevalidate",
+              options: { cacheName: "kooki-fonts-v1" },
+            },
+          ],
+        },
+        devOptions: {
+          // Habilitar SW no dev para testar atualizações
+          enabled: false,
         },
       }),
     ],
