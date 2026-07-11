@@ -1,3 +1,47 @@
-import{describe,expect,it}from'vitest'
-import{ingredientSimilarity,isLikelyDuplicate,matchPantry,parseDurations,parseVoiceCommand,readableQuantity,scaleQuantity}from'./product'
-describe('produto avançado',()=>{it('ajusta porções sem alterar original',()=>{expect(scaleQuantity(2,4,8)).toBe(4);expect(scaleQuantity(null,4,8)).toBeNull()});it('formata frações legíveis',()=>expect(readableQuantity(1/3)).toBe('⅓'));it('detecta tempos em português',()=>expect(parseDurations('Asse por 30 minutos e descanse 1 hora')).toEqual([{label:'30 minutos',seconds:1800},{label:'1 hora',seconds:3600}]));it('interpreta voz com fallback',()=>{expect(parseVoiceCommand('Próximo passo')).toBe('next');expect(parseVoiceCommand('faça magia')).toBe('unknown')});it('calcula similaridade e duplicidade',()=>{expect(ingredientSimilarity(['Ovo','Farinha'],['ovo','leite'])).toBeCloseTo(1/3);expect(isLikelyDuplicate({title:'Bolo de cenoura',ingredients:['ovo'],url:'x'},{title:'Outro',ingredients:[],url:'x'})).toBe(true)});it('sugere somente receitas salvas pela despensa',()=>{const result=matchPantry([{id:'r1',ingredients:['ovo','sal']}],[{name:'Ovo',status:'available'}]);expect(result).toEqual([{recipeId:'r1',available:1,missing:['sal'],expiringUsed:0}])})})
+import { describe, expect, it } from "vitest";
+import {
+  ingredientSimilarity,
+  isLikelyDuplicate,
+  matchPantry,
+  parseDurations,
+  parseVoiceCommand,
+  readableQuantity,
+  scaleQuantity,
+} from "./product";
+describe("produto avançado", () => {
+  it("ajusta porções sem alterar original", () => {
+    expect(scaleQuantity(2, 4, 8)).toBe(4);
+    expect(scaleQuantity(null, 4, 8)).toBeNull();
+  });
+  it("formata frações legíveis", () =>
+    expect(readableQuantity(1 / 3)).toBe("⅓"));
+  it("detecta tempos em português", () =>
+    expect(parseDurations("Asse por 30 minutos e descanse 1 hora")).toEqual([
+      { label: "30 minutos", seconds: 1800 },
+      { label: "1 hora", seconds: 3600 },
+    ]));
+  it("interpreta voz com fallback", () => {
+    expect(parseVoiceCommand("Próximo passo")).toBe("next");
+    expect(parseVoiceCommand("faça magia")).toBe("unknown");
+  });
+  it("calcula similaridade e duplicidade", () => {
+    expect(
+      ingredientSimilarity(["Ovo", "Farinha"], ["ovo", "leite"]),
+    ).toBeCloseTo(1 / 3);
+    expect(
+      isLikelyDuplicate(
+        { title: "Bolo de cenoura", ingredients: ["ovo"], url: "x" },
+        { title: "Outro", ingredients: [], url: "x" },
+      ),
+    ).toBe(true);
+  });
+  it("sugere somente receitas salvas pela despensa", () => {
+    const result = matchPantry(
+      [{ id: "r1", ingredients: ["ovo", "sal"] }],
+      [{ name: "Ovo", status: "available" }],
+    );
+    expect(result).toEqual([
+      { recipeId: "r1", available: 1, missing: ["sal"], expiringUsed: 0 },
+    ]);
+  });
+});

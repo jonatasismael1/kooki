@@ -1,12 +1,147 @@
-export type TimerDuration={label:string;seconds:number}
-const fractions:[[number,string],...[number,string][]]=[[1/8,'⅛'],[1/4,'¼'],[1/3,'⅓'],[1/2,'½'],[2/3,'⅔'],[3/4,'¾']]
-export function readableQuantity(value:number){const whole=Math.floor(value);const decimal=value-whole;const match=fractions.reduce((best,current)=>Math.abs(current[0]-decimal)<Math.abs(best[0]-decimal)?current:best);if(Math.abs(match[0]-decimal)<0.04)return`${whole||''}${match[1]}`;return new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2}).format(value)}
-export function scaleQuantity(quantity:number|null,originalServings:number|null,targetServings:number|null){if(quantity===null||!originalServings||!targetServings||originalServings<=0||targetServings<=0)return null;return quantity*(targetServings/originalServings)}
-export function parseDurations(text:string):TimerDuration[]{const units:Record<string,number>={segundo:1,segundos:1,minuto:60,minutos:60,hora:3600,horas:3600};const results:TimerDuration[]=[];for(const match of text.matchAll(/(\d+(?:[,.]\d+)?)\s*(segundos?|minutos?|horas?)/gi)){const value=Number(match[1].replace(',','.'));results.push({label:`${match[1]} ${match[2]}`,seconds:Math.round(value*units[match[2].toLowerCase()])})}return results}
-export type VoiceCommand='next'|'previous'|'repeat'|'ingredients'|'step'|'start_timer'|'pause_timer'|'resume_timer'|'unknown'
-export function parseVoiceCommand(input:string):VoiceCommand{const value=input.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');if(/proxim/.test(value))return'next';if(/voltar|anterior/.test(value))return'previous';if(/repet/.test(value))return'repeat';if(/ler ingredientes?/.test(value))return'ingredients';if(/ler (o )?passo/.test(value))return'step';if(/iniciar temporizador/.test(value))return'start_timer';if(/pausar temporizador/.test(value))return'pause_timer';if(/continuar temporizador/.test(value))return'resume_timer';return'unknown'}
-export function normalizeIngredient(value:string){return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,'').trim()}
-export function ingredientSimilarity(a:string[],b:string[]){const left=new Set(a.map(normalizeIngredient));const right=new Set(b.map(normalizeIngredient));const intersection=[...left].filter(item=>right.has(item)).length;const union=new Set([...left,...right]).size;return union?intersection/union:0}
-export function isLikelyDuplicate(a:{title:string;ingredients:string[];url?:string|null},b:{title:string;ingredients:string[];url?:string|null}){if(a.url&&b.url&&a.url===b.url)return true;const titleA=normalizeIngredient(a.title),titleB=normalizeIngredient(b.title);return(titleA.includes(titleB)||titleB.includes(titleA))&&ingredientSimilarity(a.ingredients,b.ingredients)>=0.6}
-export type PantryMatch={recipeId:string;available:number;missing:string[];expiringUsed:number}
-export function matchPantry(recipes:Array<{id:string;ingredients:string[]}>,pantry:Array<{name:string;status:string;expiresAt?:string|null}>):PantryMatch[]{const available=new Map(pantry.filter(item=>item.status==='available'||item.status==='low').map(item=>[normalizeIngredient(item.name),item]));const soon=Date.now()+3*86400000;return recipes.map(recipe=>{const missing=recipe.ingredients.filter(name=>!available.has(normalizeIngredient(name)));const expiringUsed=recipe.ingredients.filter(name=>{const item=available.get(normalizeIngredient(name));return item?.expiresAt&&new Date(item.expiresAt).getTime()<=soon}).length;return{recipeId:recipe.id,available:recipe.ingredients.length-missing.length,missing,expiringUsed}}).sort((a,b)=>a.missing.length-b.missing.length||b.expiringUsed-a.expiringUsed)}
+export type TimerDuration = { label: string; seconds: number };
+const fractions: [[number, string], ...[number, string][]] = [
+  [1 / 8, "⅛"],
+  [1 / 4, "¼"],
+  [1 / 3, "⅓"],
+  [1 / 2, "½"],
+  [2 / 3, "⅔"],
+  [3 / 4, "¾"],
+];
+export function readableQuantity(value: number) {
+  const whole = Math.floor(value);
+  const decimal = value - whole;
+  const match = fractions.reduce((best, current) =>
+    Math.abs(current[0] - decimal) < Math.abs(best[0] - decimal)
+      ? current
+      : best,
+  );
+  if (Math.abs(match[0] - decimal) < 0.04) return `${whole || ""}${match[1]}`;
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(
+    value,
+  );
+}
+export function scaleQuantity(
+  quantity: number | null,
+  originalServings: number | null,
+  targetServings: number | null,
+) {
+  if (
+    quantity === null ||
+    !originalServings ||
+    !targetServings ||
+    originalServings <= 0 ||
+    targetServings <= 0
+  )
+    return null;
+  return quantity * (targetServings / originalServings);
+}
+export function parseDurations(text: string): TimerDuration[] {
+  const units: Record<string, number> = {
+    segundo: 1,
+    segundos: 1,
+    minuto: 60,
+    minutos: 60,
+    hora: 3600,
+    horas: 3600,
+  };
+  const results: TimerDuration[] = [];
+  for (const match of text.matchAll(
+    /(\d+(?:[,.]\d+)?)\s*(segundos?|minutos?|horas?)/gi,
+  )) {
+    const value = Number(match[1].replace(",", "."));
+    results.push({
+      label: `${match[1]} ${match[2]}`,
+      seconds: Math.round(value * units[match[2].toLowerCase()]),
+    });
+  }
+  return results;
+}
+export type VoiceCommand =
+  | "next"
+  | "previous"
+  | "repeat"
+  | "ingredients"
+  | "step"
+  | "start_timer"
+  | "pause_timer"
+  | "resume_timer"
+  | "unknown";
+export function parseVoiceCommand(input: string): VoiceCommand {
+  const value = input
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (/proxim/.test(value)) return "next";
+  if (/voltar|anterior/.test(value)) return "previous";
+  if (/repet/.test(value)) return "repeat";
+  if (/ler ingredientes?/.test(value)) return "ingredients";
+  if (/ler (o )?passo/.test(value)) return "step";
+  if (/iniciar temporizador/.test(value)) return "start_timer";
+  if (/pausar temporizador/.test(value)) return "pause_timer";
+  if (/continuar temporizador/.test(value)) return "resume_timer";
+  return "unknown";
+}
+export function normalizeIngredient(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, "")
+    .trim();
+}
+export function ingredientSimilarity(a: string[], b: string[]) {
+  const left = new Set(a.map(normalizeIngredient));
+  const right = new Set(b.map(normalizeIngredient));
+  const intersection = [...left].filter((item) => right.has(item)).length;
+  const union = new Set([...left, ...right]).size;
+  return union ? intersection / union : 0;
+}
+export function isLikelyDuplicate(
+  a: { title: string; ingredients: string[]; url?: string | null },
+  b: { title: string; ingredients: string[]; url?: string | null },
+) {
+  if (a.url && b.url && a.url === b.url) return true;
+  const titleA = normalizeIngredient(a.title),
+    titleB = normalizeIngredient(b.title);
+  return (
+    (titleA.includes(titleB) || titleB.includes(titleA)) &&
+    ingredientSimilarity(a.ingredients, b.ingredients) >= 0.6
+  );
+}
+export type PantryMatch = {
+  recipeId: string;
+  available: number;
+  missing: string[];
+  expiringUsed: number;
+};
+export function matchPantry(
+  recipes: Array<{ id: string; ingredients: string[] }>,
+  pantry: Array<{ name: string; status: string; expiresAt?: string | null }>,
+): PantryMatch[] {
+  const available = new Map(
+    pantry
+      .filter((item) => item.status === "available" || item.status === "low")
+      .map((item) => [normalizeIngredient(item.name), item]),
+  );
+  const soon = Date.now() + 3 * 86400000;
+  return recipes
+    .map((recipe) => {
+      const missing = recipe.ingredients.filter(
+        (name) => !available.has(normalizeIngredient(name)),
+      );
+      const expiringUsed = recipe.ingredients.filter((name) => {
+        const item = available.get(normalizeIngredient(name));
+        return item?.expiresAt && new Date(item.expiresAt).getTime() <= soon;
+      }).length;
+      return {
+        recipeId: recipe.id,
+        available: recipe.ingredients.length - missing.length,
+        missing,
+        expiringUsed,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.missing.length - b.missing.length || b.expiringUsed - a.expiringUsed,
+    );
+}

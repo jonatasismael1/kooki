@@ -1,10 +1,315 @@
-import{useEffect,useMemo,useRef,useState}from'react'
-import{Bell,ChefHat,Mic,MicOff,Pause,Play,RotateCcw,Volume2,X}from'lucide-react'
-import{useParams}from'react-router-dom'
-import{supabase}from'../lib/supabase'
-import{parseDurations,parseVoiceCommand}from'../lib/product'
-import{notify}from'../components/feedback-events'
-type Step={id:string;instruction:string;position:number};type Ingredient={id:string;name:string;quantity_text:string|null};type Recipe={id:string;title:string;recipe_steps:Step[];recipe_ingredients:Ingredient[]}
-type Timer={id:string;label:string;endsAt:number;remaining:number;running:boolean}
-type Recognition={start:()=>void;stop:()=>void;continuous:boolean;lang:string;onresult:((event:{results:ArrayLike<{0:{transcript:string}}>} )=>void)|null;onerror:(()=>void)|null;onend:(()=>void)|null}
-export function CookModePage(){const{id}=useParams();const[recipe,setRecipe]=useState<Recipe|null>(null);const[step,setStep]=useState(()=>Number(localStorage.getItem(`kooki-step-${id}`)??0));const[timers,setTimers]=useState<Timer[]>(()=>JSON.parse(localStorage.getItem('kooki-timers')??'[]')as Timer[]);const[listening,setListening]=useState(false);const recognition=useRef<Recognition|null>(null);useEffect(()=>{if(!supabase)return;supabase.from('recipes').select('id,title,recipe_steps(*),recipe_ingredients(*)').eq('id',id).single().then(({data})=>setRecipe(data as Recipe))},[id]);useEffect(()=>{localStorage.setItem(`kooki-step-${id}`,String(step))},[step,id]);useEffect(()=>{const interval=setInterval(()=>setTimers(current=>current.map(timer=>timer.running?{...timer,remaining:Math.max(0,Math.ceil((timer.endsAt-Date.now())/1000))}:timer).filter(timer=>{if(timer.running&&timer.endsAt<=Date.now()){notify('success',`Temporizador concluído: ${timer.label}`);navigator.vibrate?.([200,100,200]);return false}return true})),1000);return()=>clearInterval(interval)},[]);useEffect(()=>localStorage.setItem('kooki-timers',JSON.stringify(timers)),[timers]);const current=recipe?.recipe_steps.sort((a,b)=>a.position-b.position)[step];const durations=useMemo(()=>parseDurations(current?.instruction??''),[current]);function addTimer(seconds:number,label:string){setTimers(items=>[...items,{id:crypto.randomUUID(),label,endsAt:Date.now()+seconds*1000,remaining:seconds,running:true}]);notify('info',`Temporizador iniciado: ${label}`)}function toggleTimer(timer:Timer){setTimers(items=>items.map(item=>item.id===timer.id?{...item,running:!item.running,endsAt:!item.running?Date.now()+item.remaining*1000:item.endsAt}:item))}function speak(text:string){if(!speechSynthesis)return;speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(text))}function command(text:string){const parsed=parseVoiceCommand(text);if(parsed==='next')setStep(value=>Math.min((recipe?.recipe_steps.length??1)-1,value+1));else if(parsed==='previous')setStep(value=>Math.max(0,value-1));else if(parsed==='repeat'||parsed==='step')speak(current?.instruction??'');else if(parsed==='ingredients')speak(recipe?.recipe_ingredients.map(item=>`${item.quantity_text??''} ${item.name}`).join('. ')??'');else if(parsed==='start_timer'&&durations[0])addTimer(durations[0].seconds,durations[0].label);else notify('info','Comando não reconhecido',text)}function voice(){const Constructor=(window as unknown as{SpeechRecognition?:new()=>Recognition;webkitSpeechRecognition?:new()=>Recognition}).SpeechRecognition??(window as unknown as{webkitSpeechRecognition?:new()=>Recognition}).webkitSpeechRecognition;if(!Constructor){notify('info','Controle por voz indisponível neste navegador');return}if(listening){recognition.current?.stop();setListening(false);return}const instance=new Constructor();instance.lang='pt-BR';instance.continuous=true;instance.onresult=event=>command(event.results[event.results.length-1][0].transcript);instance.onerror=()=>notify('error','Não foi possível ouvir o comando');instance.onend=()=>setListening(false);recognition.current=instance;instance.start();setListening(true)}if(!recipe||!current)return <div className="state"><ChefHat/><strong>Preparando o Modo Cozinha…</strong></div>;return <div className="cook-page"><header><span>Etapa {step+1} de {recipe.recipe_steps.length}</span><h1>{recipe.title}</h1><button onClick={voice}>{listening?<MicOff/>:<Mic/>}{listening?'Parar de ouvir':'Mãos livres'}</button></header><main><button className="speak" onClick={()=>speak(current.instruction)}><Volume2/>Ler passo</button><p>{current.instruction}</p>{durations.map(duration=><button className="timer-start" onClick={()=>addTimer(duration.seconds,duration.label)} key={duration.label}><Bell/>Iniciar temporizador de {duration.label}</button>)}<div className="cook-nav"><button disabled={step===0} onClick={()=>setStep(value=>value-1)}>Voltar</button><button disabled={step===recipe.recipe_steps.length-1} onClick={()=>setStep(value=>value+1)}>Próximo</button></div></main>{timers.length>0&&<aside className="active-timers"><h2>Temporizadores</h2>{timers.map(timer=><div key={timer.id}><strong>{timer.label}</strong><span>{Math.floor(timer.remaining/60)}:{String(timer.remaining%60).padStart(2,'0')}</span><button onClick={()=>toggleTimer(timer)}>{timer.running?<Pause/>:<Play/>}</button><button onClick={()=>setTimers(items=>items.map(item=>item.id===timer.id?{...item,remaining:Math.round((item.endsAt-Date.now())/1000),endsAt:Date.now()+item.remaining*1000,running:true}:item))}><RotateCcw/></button><button onClick={()=>setTimers(items=>items.filter(item=>item.id!==timer.id))}><X/></button></div>)}</aside>}</div>}
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Bell,
+  ChefHat,
+  Mic,
+  MicOff,
+  Pause,
+  Play,
+  RotateCcw,
+  Volume2,
+  X,
+} from "lucide-react";
+import { useParams } from "react-router-dom";
+import { supabase } from "../lib/supabase";
+import { parseDurations, parseVoiceCommand } from "../lib/product";
+import { notify } from "../components/feedback-events";
+type Step = { id: string; instruction: string; position: number };
+type Ingredient = { id: string; name: string; quantity_text: string | null };
+type Recipe = {
+  id: string;
+  title: string;
+  recipe_steps: Step[];
+  recipe_ingredients: Ingredient[];
+};
+type Timer = {
+  id: string;
+  label: string;
+  endsAt: number;
+  remaining: number;
+  running: boolean;
+  duration?: number;
+};
+type Recognition = {
+  start: () => void;
+  stop: () => void;
+  continuous: boolean;
+  lang: string;
+  onresult:
+    | ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void)
+    | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+};
+export function CookModePage() {
+  const { id } = useParams();
+  const [recipe, setRecipe] = useState<Recipe | null>(null);
+  const [step, setStep] = useState(() =>
+    Number(localStorage.getItem(`kooki-step-${id}`) ?? 0),
+  );
+  const [timers, setTimers] = useState<Timer[]>(
+    () => JSON.parse(localStorage.getItem("kooki-timers") ?? "[]") as Timer[],
+  );
+  const [listening, setListening] = useState(false);
+  const recognition = useRef<Recognition | null>(null);
+  useEffect(() => {
+    if (!supabase) return;
+    supabase
+      .from("recipes")
+      .select("id,title,recipe_steps(*),recipe_ingredients(*)")
+      .eq("id", id)
+      .single()
+      .then(({ data }) => setRecipe(data as Recipe));
+  }, [id]);
+  useEffect(() => {
+    localStorage.setItem(`kooki-step-${id}`, String(step));
+  }, [step, id]);
+  useEffect(() => {
+    const interval = setInterval(
+      () =>
+        setTimers((current) =>
+          current
+            .map((timer) =>
+              timer.running
+                ? {
+                    ...timer,
+                    remaining: Math.max(
+                      0,
+                      Math.ceil((timer.endsAt - Date.now()) / 1000),
+                    ),
+                  }
+                : timer,
+            )
+            .filter((timer) => {
+              if (timer.running && timer.endsAt <= Date.now()) {
+                notify("success", `Temporizador concluído: ${timer.label}`);
+                navigator.vibrate?.([200, 100, 200]);
+                if (
+                  "Notification" in window &&
+                  Notification.permission === "granted"
+                )
+                  new Notification("Temporizador concluído", {
+                    body: timer.label,
+                  });
+                const AudioContextClass = window.AudioContext;
+                if (AudioContextClass) {
+                  const context = new AudioContextClass();
+                  const oscillator = context.createOscillator();
+                  oscillator.connect(context.destination);
+                  oscillator.frequency.value = 880;
+                  oscillator.start();
+                  oscillator.stop(context.currentTime + 0.35);
+                }
+                return false;
+              }
+              return true;
+            }),
+        ),
+      1000,
+    );
+    return () => clearInterval(interval);
+  }, []);
+  useEffect(
+    () => localStorage.setItem("kooki-timers", JSON.stringify(timers)),
+    [timers],
+  );
+  const current = recipe?.recipe_steps.sort((a, b) => a.position - b.position)[
+    step
+  ];
+  const durations = useMemo(
+    () => parseDurations(current?.instruction ?? ""),
+    [current],
+  );
+  function addTimer(seconds: number, label: string) {
+    if ("Notification" in window && Notification.permission === "default")
+      void Notification.requestPermission();
+    setTimers((items) => [
+      ...items,
+      {
+        id: crypto.randomUUID(),
+        label,
+        endsAt: Date.now() + seconds * 1000,
+        remaining: seconds,
+        running: true,
+        duration: seconds,
+      },
+    ]);
+    notify("info", `Temporizador iniciado: ${label}`);
+  }
+  function toggleTimer(timer: Timer) {
+    setTimers((items) =>
+      items.map((item) =>
+        item.id === timer.id
+          ? {
+              ...item,
+              running: !item.running,
+              endsAt: !item.running
+                ? Date.now() + item.remaining * 1000
+                : item.endsAt,
+            }
+          : item,
+      ),
+    );
+  }
+  function speak(text: string) {
+    if (!speechSynthesis) return;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+  }
+  function command(text: string) {
+    const parsed = parseVoiceCommand(text);
+    if (parsed === "next")
+      setStep((value) =>
+        Math.min((recipe?.recipe_steps.length ?? 1) - 1, value + 1),
+      );
+    else if (parsed === "previous") setStep((value) => Math.max(0, value - 1));
+    else if (parsed === "repeat" || parsed === "step")
+      speak(current?.instruction ?? "");
+    else if (parsed === "ingredients")
+      speak(
+        recipe?.recipe_ingredients
+          .map((item) => `${item.quantity_text ?? ""} ${item.name}`)
+          .join(". ") ?? "",
+      );
+    else if (parsed === "start_timer" && durations[0])
+      addTimer(durations[0].seconds, durations[0].label);
+    else if (parsed === "pause_timer") {
+      const active = timers.find((timer) => timer.running);
+      if (active) toggleTimer(active);
+      else notify("info", "Nenhum temporizador ativo");
+    } else if (parsed === "resume_timer") {
+      const paused = timers.find((timer) => !timer.running);
+      if (paused) toggleTimer(paused);
+      else notify("info", "Nenhum temporizador pausado");
+    } else notify("info", "Comando não reconhecido", text);
+  }
+  function voice() {
+    const Constructor =
+      (
+        window as unknown as {
+          SpeechRecognition?: new () => Recognition;
+          webkitSpeechRecognition?: new () => Recognition;
+        }
+      ).SpeechRecognition ??
+      (window as unknown as { webkitSpeechRecognition?: new () => Recognition })
+        .webkitSpeechRecognition;
+    if (!Constructor) {
+      notify("info", "Controle por voz indisponível neste navegador");
+      return;
+    }
+    if (listening) {
+      recognition.current?.stop();
+      setListening(false);
+      return;
+    }
+    const instance = new Constructor();
+    instance.lang = "pt-BR";
+    instance.continuous = true;
+    instance.onresult = (event) =>
+      command(event.results[event.results.length - 1][0].transcript);
+    instance.onerror = () =>
+      notify("error", "Não foi possível ouvir o comando");
+    instance.onend = () => setListening(false);
+    recognition.current = instance;
+    instance.start();
+    setListening(true);
+  }
+  if (!recipe || !current)
+    return (
+      <div className="state">
+        <ChefHat />
+        <strong>Preparando o Modo Cozinha…</strong>
+      </div>
+    );
+  return (
+    <div className="cook-page">
+      <header>
+        <span>
+          Etapa {step + 1} de {recipe.recipe_steps.length}
+        </span>
+        <h1>{recipe.title}</h1>
+        <button onClick={voice}>
+          {listening ? <MicOff /> : <Mic />}
+          {listening ? "Parar de ouvir" : "Mãos livres"}
+        </button>
+      </header>
+      <main>
+        <button className="speak" onClick={() => speak(current.instruction)}>
+          <Volume2 />
+          Ler passo
+        </button>
+        <p>{current.instruction}</p>
+        {durations.map((duration) => (
+          <button
+            className="timer-start"
+            onClick={() => addTimer(duration.seconds, duration.label)}
+            key={duration.label}
+          >
+            <Bell />
+            Iniciar temporizador de {duration.label}
+          </button>
+        ))}
+        <div className="cook-nav">
+          <button
+            disabled={step === 0}
+            onClick={() => setStep((value) => value - 1)}
+          >
+            Voltar
+          </button>
+          <button
+            disabled={step === recipe.recipe_steps.length - 1}
+            onClick={() => setStep((value) => value + 1)}
+          >
+            Próximo
+          </button>
+        </div>
+      </main>
+      {timers.length > 0 && (
+        <aside className="active-timers">
+          <h2>Temporizadores</h2>
+          {timers.map((timer) => (
+            <div key={timer.id}>
+              <strong>{timer.label}</strong>
+              <span>
+                {Math.floor(timer.remaining / 60)}:
+                {String(timer.remaining % 60).padStart(2, "0")}
+              </span>
+              <button onClick={() => toggleTimer(timer)}>
+                {timer.running ? <Pause /> : <Play />}
+              </button>
+              <button
+                onClick={() =>
+                  setTimers((items) =>
+                    items.map((item) =>
+                      item.id === timer.id
+                        ? {
+                            ...item,
+                            remaining: item.duration ?? item.remaining,
+                            endsAt:
+                              Date.now() +
+                              (item.duration ?? item.remaining) * 1000,
+                            running: true,
+                          }
+                        : item,
+                    ),
+                  )
+                }
+              >
+                <RotateCcw />
+              </button>
+              <button
+                onClick={() =>
+                  setTimers((items) =>
+                    items.filter((item) => item.id !== timer.id),
+                  )
+                }
+              >
+                <X />
+              </button>
+            </div>
+          ))}
+        </aside>
+      )}
+    </div>
+  );
+}

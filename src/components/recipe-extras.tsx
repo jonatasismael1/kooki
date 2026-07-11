@@ -1,7 +1,164 @@
 /* oxlint-disable eslint-plugin-react-hooks/exhaustive-deps */
-import{useEffect,useState}from'react'
-import{FolderHeart,History,Image}from'lucide-react'
-import{supabase}from'../lib/supabase'
-import{notify}from'./feedback-events'
-type Collection={id:string;name:string};type Session={id:string;cooked_at:string;rating:number|null;comment:string|null};type Photo={id:string;storage_path:string;alt_text:string|null;url?:string}
-export function RecipeExtras({recipeId}:{recipeId:string}){const[collections,setCollections]=useState<Collection[]>([]);const[selected,setSelected]=useState<string[]>([]);const[sessions,setSessions]=useState<Session[]>([]);const[photos,setPhotos]=useState<Photo[]>([]);async function load(){if(!supabase)return;const[collectionRows,links,sessionRows,photoRows]=await Promise.all([supabase.from('collections').select('id,name').eq('status','active').order('name'),supabase.from('collection_recipes').select('collection_id').eq('recipe_id',recipeId),supabase.from('recipe_cook_sessions').select('id,cooked_at,rating,comment').eq('recipe_id',recipeId).order('cooked_at',{ascending:false}),supabase.from('recipe_photos').select('id,storage_path,alt_text').eq('recipe_id',recipeId).order('position')]);setCollections(collectionRows.data??[]);setSelected((links.data??[]).map(item=>item.collection_id));setSessions(sessionRows.data??[]);const signed=await Promise.all((photoRows.data??[]).map(async photo=>{const{data}=await supabase.storage.from('recipe-photos').createSignedUrl(photo.storage_path,3600);return{...photo,url:data?.signedUrl}}));setPhotos(signed)}useEffect(()=>{void load()},[recipeId]);async function toggle(collectionId:string){if(!supabase)return;if(selected.includes(collectionId)){await supabase.from('collection_recipes').delete().eq('recipe_id',recipeId).eq('collection_id',collectionId);setSelected(values=>values.filter(value=>value!==collectionId))}else{await supabase.from('collection_recipes').insert({recipe_id:recipeId,collection_id:collectionId});setSelected(values=>[...values,collectionId])}notify('success','Coleções atualizadas')}async function removeSession(id:string){if(!supabase||!confirm('Excluir este registro de preparo?'))return;await supabase.from('recipe_cook_sessions').delete().eq('id',id);notify('success','Registro excluído');await load()}return <><section><h2><FolderHeart/>Coleções</h2>{collections.length===0?<p className="muted">Crie coleções em Organizar.</p>:<div className="chip-list">{collections.map(item=><button className={selected.includes(item.id)?'active':''} onClick={()=>toggle(item.id)} key={item.id}>{item.name}</button>)}</div>}</section><section><h2><History/>Histórico de preparo</h2>{sessions.length===0?<p className="muted">Você ainda não marcou esta receita como preparada.</p>:<><p>Você preparou esta receita {sessions.length} vez(es). Última vez: {new Date(sessions[0].cooked_at).toLocaleDateString('pt-BR')}.</p><div className="notes">{sessions.map(session=><article key={session.id}><strong>{session.rating?'★'.repeat(session.rating):'Sem nota'}</strong><p>{session.comment??'Sem observações.'}</p><small>{new Date(session.cooked_at).toLocaleString('pt-BR')}</small><button onClick={()=>removeSession(session.id)}>Excluir</button></article>)}</div></>}</section><section><h2><Image/>Fotos próprias</h2>{photos.length===0?<p className="muted">Nenhuma foto adicionada.</p>:<div className="photo-grid">{photos.map(photo=><img src={photo.url} alt={photo.alt_text??'Foto da receita'} key={photo.id}/>)}</div>}</section></>}
+import { useEffect, useState } from "react";
+import { FolderHeart, History, Image } from "lucide-react";
+import { supabase } from "../lib/supabase";
+import { notify } from "./feedback-events";
+type Collection = { id: string; name: string };
+type Session = {
+  id: string;
+  cooked_at: string;
+  rating: number | null;
+  comment: string | null;
+};
+type Photo = {
+  id: string;
+  storage_path: string;
+  alt_text: string | null;
+  url?: string;
+};
+export function RecipeExtras({ recipeId }: { recipeId: string }) {
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  async function load() {
+    if (!supabase) return;
+    const [collectionRows, links, sessionRows, photoRows] = await Promise.all([
+      supabase
+        .from("collections")
+        .select("id,name")
+        .eq("status", "active")
+        .order("name"),
+      supabase
+        .from("collection_recipes")
+        .select("collection_id")
+        .eq("recipe_id", recipeId),
+      supabase
+        .from("recipe_cook_sessions")
+        .select("id,cooked_at,rating,comment")
+        .eq("recipe_id", recipeId)
+        .order("cooked_at", { ascending: false }),
+      supabase
+        .from("recipe_photos")
+        .select("id,storage_path,alt_text")
+        .eq("recipe_id", recipeId)
+        .order("position"),
+    ]);
+    setCollections(collectionRows.data ?? []);
+    setSelected((links.data ?? []).map((item) => item.collection_id));
+    setSessions(sessionRows.data ?? []);
+    const signed = await Promise.all(
+      (photoRows.data ?? []).map(async (photo) => {
+        const { data } = await supabase.storage
+          .from("recipe-photos")
+          .createSignedUrl(photo.storage_path, 3600);
+        return { ...photo, url: data?.signedUrl };
+      }),
+    );
+    setPhotos(signed);
+  }
+  useEffect(() => {
+    void load();
+  }, [recipeId]);
+  async function toggle(collectionId: string) {
+    if (!supabase) return;
+    if (selected.includes(collectionId)) {
+      await supabase
+        .from("collection_recipes")
+        .delete()
+        .eq("recipe_id", recipeId)
+        .eq("collection_id", collectionId);
+      setSelected((values) => values.filter((value) => value !== collectionId));
+    } else {
+      await supabase
+        .from("collection_recipes")
+        .insert({ recipe_id: recipeId, collection_id: collectionId });
+      setSelected((values) => [...values, collectionId]);
+    }
+    notify("success", "Coleções atualizadas");
+  }
+  async function removeSession(id: string) {
+    if (!supabase || !confirm("Excluir este registro de preparo?")) return;
+    await supabase.from("recipe_cook_sessions").delete().eq("id", id);
+    notify("success", "Registro excluído");
+    await load();
+  }
+  return (
+    <>
+      <section>
+        <h2>
+          <FolderHeart />
+          Coleções
+        </h2>
+        {collections.length === 0 ? (
+          <p className="muted">Crie coleções em Organizar.</p>
+        ) : (
+          <div className="chip-list">
+            {collections.map((item) => (
+              <button
+                className={selected.includes(item.id) ? "active" : ""}
+                onClick={() => toggle(item.id)}
+                key={item.id}
+              >
+                {item.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+      <section>
+        <h2>
+          <History />
+          Histórico de preparo
+        </h2>
+        {sessions.length === 0 ? (
+          <p className="muted">
+            Você ainda não marcou esta receita como preparada.
+          </p>
+        ) : (
+          <>
+            <p>
+              Você preparou esta receita {sessions.length} vez(es). Última vez:{" "}
+              {new Date(sessions[0].cooked_at).toLocaleDateString("pt-BR")}.
+            </p>
+            <div className="notes">
+              {sessions.map((session) => (
+                <article key={session.id}>
+                  <strong>
+                    {session.rating ? "★".repeat(session.rating) : "Sem nota"}
+                  </strong>
+                  <p>{session.comment ?? "Sem observações."}</p>
+                  <small>
+                    {new Date(session.cooked_at).toLocaleString("pt-BR")}
+                  </small>
+                  <button onClick={() => removeSession(session.id)}>
+                    Excluir
+                  </button>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+      <section>
+        <h2>
+          <Image />
+          Fotos próprias
+        </h2>
+        {photos.length === 0 ? (
+          <p className="muted">Nenhuma foto adicionada.</p>
+        ) : (
+          <div className="photo-grid">
+            {photos.map((photo) => (
+              <img
+                src={photo.url}
+                alt={photo.alt_text ?? "Foto da receita"}
+                key={photo.id}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}

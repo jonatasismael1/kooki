@@ -23,13 +23,13 @@
 
 ## Fases
 
-- [x] Fase 1 — Banco, categorias, tags, favoritos e filtros.
-- [x] Fase 2 — Coleções, notas, duplicidade e importações.
-- [x] Fase 3 — Porções, planejamento e compras.
-- [x] Fase 4 — Temporizadores, histórico e fotos.
-- [x] Fase 5 — Voz, leitura e timers persistentes com fallback por navegador.
-- [x] Fase 6 — Despensa e sugestões.
-- [x] Fase 7 — Compartilhamento e arquitetura futura.
+- [~] Fase 1 — Banco e vínculos múltiplos concluídos; gestão/combinação completa de filtros pendente.
+- [~] Fase 2 — Coleções, notas, duplicidade e inbox básicos; edição/reordenação e ações do inbox pendentes.
+- [~] Fase 3 — Escala, semana e compras básicas; cópias, refeição manual, reordenação e lista persistente pendentes.
+- [~] Fase 4 — Timers, histórico e fotos básicos; formulários completos, edição, capa e fotos por sessão pendentes.
+- [~] Fase 5 — Voz/leitura e persistência local; notificação e todos os comandos de timer pendentes.
+- [~] Fase 6 — Cadastro mínimo e sugestões; gestão completa e desconto confirmado da despensa pendentes.
+- [~] Fase 7 — Link público/revogação/cópia básicos; link privado, texto, visual e compras no compartilhado pendentes.
 - [ ] Release — documentação, validações, GitHub e Netlify.
 
 ## Decisões

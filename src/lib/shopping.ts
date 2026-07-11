@@ -1,4 +1,41 @@
-export type IngredientInput={name:string;normalized_name:string|null;quantity:number|null;normalized_unit:string|null}
-export type Consolidated={name:string;normalizedName:string;quantity:number|null;unit:string|null}
-export function unitsCompatible(a:string|null,b:string|null){return a===b&&a!==null}
-export function consolidateIngredients(items:IngredientInput[]):Consolidated[]{const out:Consolidated[]=[];for(const item of items){const key=item.normalized_name?.trim().toLowerCase()||item.name.trim().toLowerCase();const found=out.find(x=>x.normalizedName===key&&unitsCompatible(x.unit,item.normalized_unit)&&x.quantity!==null&&item.quantity!==null);if(found)found.quantity=(found.quantity??0)+(item.quantity??0);else out.push({name:item.name,normalizedName:key,quantity:item.quantity,unit:item.normalized_unit})}return out}
+export type IngredientInput = {
+  name: string;
+  normalized_name: string | null;
+  quantity: number | null;
+  normalized_unit: string | null;
+};
+export type Consolidated = {
+  name: string;
+  normalizedName: string;
+  quantity: number | null;
+  unit: string | null;
+};
+export function unitsCompatible(a: string | null, b: string | null) {
+  return a === b && a !== null;
+}
+export function consolidateIngredients(
+  items: IngredientInput[],
+): Consolidated[] {
+  const out: Consolidated[] = [];
+  for (const item of items) {
+    const key =
+      item.normalized_name?.trim().toLowerCase() ||
+      item.name.trim().toLowerCase();
+    const found = out.find(
+      (x) =>
+        x.normalizedName === key &&
+        unitsCompatible(x.unit, item.normalized_unit) &&
+        x.quantity !== null &&
+        item.quantity !== null,
+    );
+    if (found) found.quantity = (found.quantity ?? 0) + (item.quantity ?? 0);
+    else
+      out.push({
+        name: item.name,
+        normalizedName: key,
+        quantity: item.quantity,
+        unit: item.normalized_unit,
+      });
+  }
+  return out;
+}
