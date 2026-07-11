@@ -93,18 +93,19 @@ button, a {
   display: flex;
 }
 
-/* Desktop sidebar — hidden on mobile */
+/* Desktop sidebar: hidden by default (mobile), shown on desktop via media query */
 .shell aside {
+  display: none;
   position: fixed;
   inset: 0 auto 0 0;
   width: 260px;
   padding: 32px 20px;
   background-color: var(--surface);
   border-right: 1px solid var(--border);
-  display: flex;
   flex-direction: column;
   gap: 28px;
   z-index: 20;
+  overflow-y: auto;
 }
 
 .brand {
@@ -177,16 +178,15 @@ button, a {
   border-color: var(--destructive);
 }
 
-/* Main content */
+/* Main content — mobile fills full width, desktop gets sidebar offset */
 .content {
   flex-grow: 1;
-  /* Mobile default: full width, bottom bar clearance */
-  padding: 20px var(--content-px) calc(var(--bottom-bar-height) + 24px + env(safe-area-inset-bottom));
+  min-width: 0; /* prevent flex overflow */
+  padding: 20px 16px calc(var(--bottom-bar-height) + 24px + env(safe-area-inset-bottom));
   min-height: 100vh;
-  width: 100%;
 }
 
-/* Bottom nav bar — always visible, mobile only hidden on desktop */
+/* Bottom nav: visible on mobile (default), hidden on desktop via media query */
 .bottom {
   display: flex;
   position: fixed;
@@ -1111,122 +1111,118 @@ progress::-moz-progress-bar {
   to { background-position: -200%; }
 }
 
-/* Responsive Media Queries */
-@media(max-width: 768px) {
+/* ===================================================
+   RESPONSIVE — DESKTOP (≥ 769px)
+   =================================================== */
+@media (min-width: 769px) {
+  /* Show sidebar on desktop */
   .shell aside {
+    display: flex;
+  }
+
+  /* Hide bottom nav on desktop */
+  .bottom {
     display: none;
   }
-  
+
+  /* Content with sidebar offset */
   .content {
-    margin-left: 0;
-    padding: 24px 20px 110px;
+    margin-left: 260px;
+    padding: 44px 40px 80px;
   }
-  
-  .bottom {
-    display: flex;
-    position: fixed;
-    z-index: 40;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 72px;
-    background-color: var(--surface);
-    border-top: 1px solid var(--border);
-    justify-content: space-around;
-    align-items: center;
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  
-  .bottom .nav {
-    flex-direction: column;
-    gap: 4px;
-    font-size: 10px;
-    padding: 6px 8px;
-    min-height: auto;
-    border-radius: 8px;
-    flex-grow: 1;
-    text-align: center;
-    justify-content: center;
-  }
-  
-  .bottom .nav.active {
-    background-color: transparent;
-    color: var(--primary);
-    box-shadow: none;
-    font-weight: 700;
-  }
-  
-  .bottom .nav svg {
-    width: 22px;
-    height: 22px;
-  }
-  
+
+  /* Toast above footer, not above bottom bar */
   .toast-viewport {
-    right: 16px;
-    bottom: 84px;
+    bottom: 24px;
+    right: 24px;
   }
-  
+
+  /* Larger form cards on desktop */
+  .form-card {
+    padding: 28px 32px;
+    gap: 20px;
+  }
+
+  .manage-list article {
+    padding: 16px 20px;
+  }
+
+  .category-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+  }
+
+  .quick {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+  }
+
+  .quick button {
+    min-height: 100px;
+    font-size: 14px;
+  }
+
+  .recipe-grid {
+    gap: 24px;
+  }
+
+  .detail-grid {
+    margin: 32px 0;
+    gap: 40px;
+  }
+
+  .detail-grid section {
+    padding: 32px;
+  }
+
+  h1 {
+    font-size: clamp(28px, 4vw, 40px);
+  }
+
+  h2 {
+    font-size: clamp(20px, 3vw, 26px);
+    margin-bottom: 16px;
+  }
+
+  .page-header {
+    margin-bottom: 28px;
+  }
+}
+
+/* ===================================================
+   RESPONSIVE — MOBILE (≤ 768px)
+   =================================================== */
+@media (max-width: 768px) {
   .filter-bar {
     grid-template-columns: 1fr;
   }
-  
-  .filter-bar button {
-    width: 100%;
-  }
-  
+
   .detail-grid {
     grid-template-columns: 1fr;
     gap: 20px;
   }
-  
+
   .hero {
     flex-direction: column;
     align-items: stretch;
-    gap: 20px;
   }
-  
+
   .hero button {
     width: 100%;
   }
+
+  .quick {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-@media(prefers-reduced-motion: reduce) {
+/* ===================================================
+   REDUCED MOTION
+   =================================================== */
+@media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto !important;
     animation: none !important;
     transition: none !important;
   }
 }
-
-/* Redesign UI Adjustments */
-.relative input {
-  padding-left: 44px !important;
-  padding-right: 40px !important;
-}
-
-@media(max-width: 768px) {
-  .form-card {
-    padding: 20px !important;
-    gap: 16px !important;
-  }
-  .manage-list article {
-    padding: 12px !important;
-  }
-}
-
-@media(max-width: 480px) {
-  .quick {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px !important;
-  }
-  .quick button {
-    min-height: 85px !important;
-    font-size: 12px !important;
-    padding: 10px !important;
-  }
-  .quick button svg {
-    width: 20px !important;
-    height: 20px !important;
-  }
-}
-

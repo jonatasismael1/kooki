@@ -642,8 +642,8 @@ function Dashboard() {
       </header>
 
       {/* PLATFORM-DETECTING QUICK IMPORT BAR */}
-      <section className="bg-surface border border-border p-5 rounded-2xl shadow-sm flex flex-col gap-4">
-        <h3 className="text-base font-serif font-semibold">Importar de Link</h3>
+      <section style={{ background: "var(--surface)", border: "1px solid var(--border)", padding: "16px", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-sm)", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <h3 style={{ fontFamily: "'Lora', serif", fontWeight: 600, fontSize: "15px" }}>Importar de Link</h3>
         <form onSubmit={handleQuickImport} className="flex gap-2 items-center">
           <div className="relative flex-grow">
             <input
@@ -676,9 +676,9 @@ function Dashboard() {
           </LoadingButton>
         </form>
         {platform && (
-          <p className="text-[11px] text-text-secondary flex items-center gap-1.5 font-medium">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-            Link de {platform === "generic" ? "Blog/Site" : platform} reconhecido! A IA vai estruturar a receita.
+          <p style={{ fontSize: "11px", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px", fontWeight: 500 }}>
+            <Sparkles style={{ width: 14, height: 14, color: "var(--primary)", flexShrink: 0 }} />
+            Link de {platform === "generic" ? "Blog/Site" : platform} reconhecido — a IA vai estruturar automaticamente.
           </p>
         )}
       </section>
@@ -733,17 +733,33 @@ function Dashboard() {
         </section>
       )}
 
-      {/* NEEDS REVIEW BANNER */}
+      {/* NEEDS REVIEW BANNER — só aparece quando há importações pendentes de revisão */}
       {reviews > 0 && (
         <button
-          className="review-banner flex items-center justify-between p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl text-amber-800 dark:text-amber-300 font-medium text-sm text-left hover:scale-[1.01]"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+            padding: "12px 16px",
+            background: "#fff8ed",
+            border: "1px solid #f0c070",
+            borderLeft: "4px solid var(--warning)",
+            borderRadius: "var(--radius-md)",
+            color: "#7a4d0e",
+            fontSize: "13px",
+            fontWeight: 500,
+            textAlign: "left",
+            cursor: "pointer",
+            width: "100%",
+          }}
           onClick={() => navigate("/organizar?tab=imports")}
         >
-          <span className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-            Você tem {reviews} importação(ões) que precisam de revisão manual.
+          <span style={{ display: "flex", alignItems: "center", gap: "8px", flexGrow: 1 }}>
+            <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />
+            {reviews} importação{reviews > 1 ? "ões" : ""} aguardando revisão manual.
           </span>
-          <span className="font-semibold underline flex items-center">Revisar <ChevronRight className="w-4 h-4" /></span>
+          <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "2px", whiteSpace: "nowrap", flexShrink: 0 }}>Revisar <ChevronRight style={{ width: 14, height: 14 }} /></span>
         </button>
       )}
 
