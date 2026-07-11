@@ -15,7 +15,10 @@ import {
 import { supabase } from "../lib/supabase";
 import { notify } from "../components/feedback-events";
 import { PantrySuggestions } from "../components/pantry-suggestions";
+import { ConfirmDialog, Dialog } from "../components/ui";
+
 type Tab = "categories" | "tags" | "collections" | "pantry" | "imports";
+
 type Row = {
   id: string;
   name: string;
@@ -36,6 +39,7 @@ type Row = {
   expires_at?: string | null;
   notes?: string | null;
 };
+
 const labels: Record<Tab, string> = {
   categories: "Categorias",
   tags: "Tags",
@@ -43,6 +47,7 @@ const labels: Record<Tab, string> = {
   pantry: "Despensa",
   imports: "Importações",
 };
+
 export function OrganizerPage() {
   const [tab, setTab] = useState<Tab>("categories");
   const [rows, setRows] = useState<Row[]>([]);
@@ -54,6 +59,15 @@ export function OrganizerPage() {
   const [unit, setUnit] = useState("");
   const [sector, setSector] = useState("Outros");
   const [expiresAt, setExpiresAt] = useState("");
+
+  // Visual modal states
+  const [deleteConfirm, setDeleteConfirm] = useState<Row | null>(null);
+  const [deleteImportConfirm, setDeleteImportConfirm] = useState<Row | null>(null);
+  const [editingRow, setEditingRow] = useState<Row | null>(null);
+  
+  // States for the edit form inside Dialog
+  const [editFields, setEditFields] = useState<Partial<Row>>({});
+
   async function load() {
     if (!supabase) return;
     setLoading(true);
@@ -68,22 +82,27 @@ export function OrganizerPage() {
       query = query.order("created_at", { ascending: false }).limit(30);
     else if (tab === "categories") query = query.order("position");
     else query = query.order("created_at", { ascending: false });
+    
     const { data, error } = await query;
-    if (error)
+    if (error) {
       notify(
         "error",
         `Erro ao carregar ${labels[tab].toLowerCase()}`,
         error.message,
       );
+    }
     setRows((data as Row[]) ?? []);
     setLoading(false);
   }
+
   useEffect(() => {
     void load();
   }, [tab]);
+
   async function create() {
     if (!supabase || !name.trim()) return;
     let error: Error | null = null;
+    
     if (tab === "categories")
       ({ error } = await supabase
         .from("categories")
@@ -106,8 +125,10 @@ export function OrganizerPage() {
         expires_at: expiresAt || null,
         status: "available",
       }));
-    if (error) notify("error", "Não foi possível criar", error.message);
-    else {
+
+    if (error) {
+      notify("error", "Não foi possível criar", error.message);
+    } else {
       notify("success", `${labels[tab].slice(0, -1)} criada`);
       setName("");
       setQuantity("");
@@ -116,52 +137,58 @@ export function OrganizerPage() {
       await load();
     }
   }
-  async function edit(row: Row) {
-    if (!supabase || row.is_system) return;
-    const nextName = prompt("Nome:", row.name)?.trim();
-    if (!nextName) return;
-    const payload: Record<string, unknown> = {
-      name: nextName,
+
+  function handleStartEdit(row: Row) {
+    setEditingRow(row);
+    setEditFields({ ...row });
+  }
+
+  async function saveEdits() {
+    if (!supabase || !editingRow) return;
+    
+    const payload: Record<string, any> = {
+      name: editFields.name?.trim(),
       updated_at: new Date().toISOString(),
     };
+
     if (tab === "pantry") {
-      const nextQuantity = prompt(
-        "Quantidade (vazio para desconhecida):",
-        row.quantity?.toString() ?? "",
-      );
-      const nextUnit = prompt("Unidade:", row.unit ?? "");
-      const nextSector = prompt("Setor:", row.sector ?? "Outros");
-      const nextExpiry = prompt("Validade (AAAA-MM-DD):", row.expires_at ?? "");
-      const nextNotes = prompt("Observações:", row.notes ?? "");
-      payload.normalized_name = nextName.toLowerCase();
-      payload.quantity = nextQuantity
-        ? Number(nextQuantity.replace(",", "."))
-        : null;
-      payload.unit = nextUnit?.trim() || null;
-      payload.sector = nextSector?.trim() || "Outros";
-      payload.expires_at = nextExpiry?.trim() || null;
-      payload.notes = nextNotes?.trim() || null;
+      payload.normalized_name = editFields.name?.trim().toLowerCase();
+      payload.quantity = editFields.quantity ? Number(String(editFields.quantity).replace(",", ".")) : null;
+      payload.unit = editFields.unit?.trim() || null;
+      payload.sector = editFields.sector?.trim() || "Outros";
+      payload.expires_at = editFields.expires_at || null;
+      payload.notes = editFields.notes?.trim() || null;
     } else if (tab === "collections") {
-      payload.description =
-        prompt("Descrição:", row.description ?? "")?.trim() || null;
-      payload.icon =
-        prompt("Ícone:", row.icon ?? "folder-heart")?.trim() || null;
+      payload.description = editFields.description?.trim() || null;
+      payload.icon = editFields.icon?.trim() || "folder-heart";
     } else if (tab === "categories") {
-      payload.icon = prompt("Ícone:", row.icon ?? "utensils")?.trim() || null;
+      payload.icon = editFields.icon?.trim() || "utensils";
     }
-    const { error } = await supabase.from(tab).update(payload).eq("id", row.id);
-    if (error) notify("error", "Não foi possível editar", error.message);
-    else await load();
+
+    const { error } = await supabase.from(tab).update(payload).eq("id", editingRow.id);
+    if (error) {
+      notify("error", "Não foi possível editar", error.message);
+    } else {
+      notify("success", "Item atualizado!");
+      setEditingRow(null);
+      await load();
+    }
   }
+
   async function setStatus(row: Row, status: string) {
     if (!supabase) return;
     const { error } = await supabase
       .from(tab === "imports" ? "recipe_import_jobs" : tab)
       .update({ status, updated_at: new Date().toISOString() })
       .eq("id", row.id);
-    if (error) notify("error", "Não foi possível atualizar", error.message);
-    else await load();
+      
+    if (error) {
+      notify("error", "Não foi possível atualizar", error.message);
+    } else {
+      await load();
+    }
   }
+
   async function move(row: Row, delta: number) {
     if (!supabase || row.position === undefined) return;
     const ordered = rows
@@ -181,18 +208,43 @@ export function OrganizerPage() {
         .update({ position: row.position })
         .eq("id", target.id),
     ]);
-    if (error) notify("error", "Não foi possível reordenar", error.message);
-    else await load();
+    if (error) {
+      notify("error", "Não foi possível reordenar", error.message);
+    } else {
+      await load();
+    }
   }
-  async function removeImport(row: Row) {
-    if (!supabase || !confirm("Excluir este registro de importação?")) return;
+
+  async function removeImport() {
+    if (!supabase || !deleteImportConfirm) return;
     const { error } = await supabase
       .from("recipe_import_jobs")
       .delete()
-      .eq("id", row.id);
-    if (error) notify("error", "Não foi possível excluir", error.message);
-    else await load();
+      .eq("id", deleteImportConfirm.id);
+      
+    setDeleteImportConfirm(null);
+    
+    if (error) {
+      notify("error", "Não foi possível excluir", error.message);
+    } else {
+      notify("success", "Registro removido");
+      await load();
+    }
   }
+
+  async function remove() {
+    if (!supabase || !deleteConfirm) return;
+    const { error } = await supabase.from(tab).delete().eq("id", deleteConfirm.id);
+    setDeleteConfirm(null);
+    
+    if (error) {
+      notify("error", "Não foi possível excluir", error.message);
+    } else {
+      notify("success", "Item excluído");
+      await load();
+    }
+  }
+
   const visibleRows = useMemo(
     () =>
       rows.filter((row) => {
@@ -205,24 +257,16 @@ export function OrganizerPage() {
       }),
     [rows, queryText, statusFilter],
   );
-  async function remove(row: Row) {
-    if (!supabase || row.is_system || !confirm(`Excluir “${row.name}”?`))
-      return;
-    const { error } = await supabase.from(tab).delete().eq("id", row.id);
-    if (error) notify("error", "Não foi possível excluir", error.message);
-    else {
-      notify("success", "Item excluído");
-      await load();
-    }
-  }
+
   return (
-    <>
+    <div className="max-w-4xl mx-auto flex flex-col gap-6">
       <header className="page-header">
         <div>
           <span className="eyebrow">ORGANIZAÇÃO</span>
-          <h1>Sua cozinha, do seu jeito</h1>
+          <h1>Configurações e acervo</h1>
         </div>
       </header>
+
       <div className="tabs organizer-tabs">
         {(Object.keys(labels) as Tab[]).map((key) => (
           <button
@@ -234,59 +278,77 @@ export function OrganizerPage() {
           </button>
         ))}
       </div>
+
       {tab !== "imports" && (
-        <section className="inline-create pantry-form">
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={`Nova ${labels[tab].toLowerCase().slice(0, -1)}…`}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void create();
-            }}
-          />
-          {tab === "pantry" && (
-            <>
-              <input
-                inputMode="decimal"
-                value={quantity}
-                onChange={(event) => setQuantity(event.target.value)}
-                placeholder="Quantidade"
-              />
-              <input
-                value={unit}
-                onChange={(event) => setUnit(event.target.value)}
-                placeholder="Unidade"
-              />
-              <input
-                value={sector}
-                onChange={(event) => setSector(event.target.value)}
-                placeholder="Setor"
-              />
-              <input
-                type="date"
-                value={expiresAt}
-                onChange={(event) => setExpiresAt(event.target.value)}
-                aria-label="Validade"
-              />
-            </>
-          )}
-          <button className="button" disabled={!name.trim()} onClick={create}>
-            <Plus />
-            Adicionar
-          </button>
+        <section className="form-card p-5">
+          <h3 className="text-sm font-serif font-semibold border-b border-border pb-2 mb-2">Adicionar Novo</h3>
+          <div className="flex flex-col md:flex-row gap-3">
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={`Nome da ${labels[tab].toLowerCase().slice(0, -1)}…`}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void create();
+              }}
+              style={{ flexGrow: 2 }}
+            />
+            {tab === "pantry" && (
+              <>
+                <input
+                  inputMode="decimal"
+                  value={quantity}
+                  onChange={(event) => setQuantity(event.target.value)}
+                  placeholder="Qtd"
+                  style={{ flexGrow: 0, width: "100px" }}
+                />
+                <input
+                  value={unit}
+                  onChange={(event) => setUnit(event.target.value)}
+                  placeholder="Unidade"
+                  style={{ flexGrow: 0, width: "120px" }}
+                />
+                <select
+                  value={sector}
+                  onChange={(event) => setSector(event.target.value)}
+                  style={{ flexGrow: 0, width: "160px" }}
+                >
+                  <option value="Outros">Outros</option>
+                  <option value="Hortifrúti">Hortifrúti</option>
+                  <option value="Açougue">Açougue</option>
+                  <option value="Laticínios">Laticínios</option>
+                  <option value="Mercearia">Mercearia</option>
+                  <option value="Padaria">Padaria</option>
+                  <option value="Congelados">Congelados</option>
+                  <option value="Bebidas">Bebidas</option>
+                </select>
+                <input
+                  type="date"
+                  value={expiresAt}
+                  onChange={(event) => setExpiresAt(event.target.value)}
+                  aria-label="Validade"
+                  style={{ flexGrow: 0, width: "160px" }}
+                />
+              </>
+            )}
+            <button className="button md:min-w-[140px]" disabled={!name.trim()} onClick={create}>
+              <Plus /> Adicionar
+            </button>
+          </div>
         </section>
       )}
+
       {(tab === "pantry" || tab === "imports") && (
-        <section className="filter-bar organizer-filters">
+        <section className="flex flex-col md:flex-row gap-3">
           <input
             value={queryText}
             onChange={(event) => setQueryText(event.target.value)}
-            placeholder="Buscar…"
+            placeholder="Buscar nos itens..."
           />
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
             aria-label="Filtrar status"
+            className="md:w-[200px]"
           >
             <option value="">Todos os estados</option>
             {(tab === "pantry"
@@ -307,7 +369,9 @@ export function OrganizerPage() {
           </select>
         </section>
       )}
+
       {tab === "pantry" && <PantrySuggestions />}
+
       {loading ? (
         <div className="skeleton-list" aria-label="Carregando">
           <i />
@@ -317,89 +381,93 @@ export function OrganizerPage() {
       ) : visibleRows.length === 0 ? (
         <div className="state">
           <PackageOpen />
-          <strong>Nenhum item por aqui</strong>
-          <p>Adicione o primeiro para começar.</p>
+          <strong>Nenhum item encontrado</strong>
+          <p>Crie um novo item acima para começar.</p>
         </div>
       ) : (
-        <div className="manage-list">
+        <div className="manage-list flex flex-col gap-3">
           {visibleRows.map((row) => (
-            <article key={row.id}>
-              <div className="manage-icon">
-                {tab === "collections" ? (
-                  <FolderHeart />
-                ) : tab === "tags" ? (
-                  <Tags />
-                ) : tab === "imports" ? (
-                  <Inbox />
-                ) : tab === "pantry" ? (
-                  <PackageOpen />
-                ) : (
-                  <Archive />
-                )}
+            <article key={row.id} className="p-4 bg-surface border border-border rounded-xl flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="manage-icon w-10 h-10 rounded-lg bg-surface-muted flex items-center justify-center text-primary">
+                  {tab === "collections" ? (
+                    <FolderHeart className="w-5 h-5" />
+                  ) : tab === "tags" ? (
+                    <Tags className="w-5 h-5" />
+                  ) : tab === "imports" ? (
+                    <Inbox className="w-5 h-5" />
+                  ) : tab === "pantry" ? (
+                    <PackageOpen className="w-5 h-5" />
+                  ) : (
+                    <Archive className="w-5 h-5" />
+                  )}
+                </div>
+                <div>
+                  <strong className="block text-sm font-semibold text-text-primary">
+                    {row.name ?? row.source_platform ?? "Importação"}
+                  </strong>
+                  <span className="text-xs text-text-secondary">
+                    {tab === "imports"
+                      ? `${row.status} · ${row.current_stage ?? "aguardando"}`
+                      : tab === "pantry"
+                        ? `${row.quantity ?? "—"} ${row.unit ?? ""} · ${row.status}`
+                        : (row.description ??
+                          row.type ??
+                          (row.is_system ? "Sistema" : "Personalizada"))}
+                  </span>
+                  {row.error_message && (
+                    <small className="error-text block text-xs text-destructive mt-0.5">{row.error_message}</small>
+                  )}
+                </div>
               </div>
-              <div>
-                <strong>
-                  {row.name ?? row.source_platform ?? "Importação"}
-                </strong>
-                <p>
-                  {tab === "imports"
-                    ? `${row.status} · ${row.current_stage ?? "aguardando"}`
-                    : tab === "pantry"
-                      ? `${row.quantity ?? "—"} ${row.unit ?? ""} · ${row.status}`
-                      : (row.description ??
-                        row.type ??
-                        (row.is_system ? "Sistema" : "Personalizada"))}
-                </p>
-                {row.error_message && (
-                  <small className="error-text">{row.error_message}</small>
-                )}
-              </div>
+
               {tab === "imports" ? (
-                <div className="tool-actions">
+                <div className="flex gap-2">
                   {row.recipe_id && (
-                    <a
-                      className="button secondary"
-                      href={`/receitas/${row.recipe_id}`}
-                    >
+                    <a className="button secondary px-3 py-1.5 min-h-0 text-xs" href={`/receitas/${row.recipe_id}`}>
                       Abrir
                     </a>
                   )}
                   {!["completed", "cancelled"].includes(row.status ?? "") && (
-                    <button onClick={() => void setStatus(row, "cancelled")}>
+                    <button className="button secondary px-3 py-1.5 min-h-0 text-xs text-text-secondary" onClick={() => void setStatus(row, "cancelled")}>
                       Cancelar
                     </button>
                   )}
-                  <button onClick={() => void removeImport(row)}>
-                    <Trash2 />
+                  <button className="icon-button danger w-8 h-8 min-w-0 min-h-0" onClick={() => setDeleteImportConfirm(row)}>
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               ) : (
                 !row.is_system && (
-                  <div className="tool-actions">
+                  <div className="flex gap-2">
                     <button
+                      className="icon-button w-8 h-8 min-w-0 min-h-0"
                       aria-label={`Editar ${row.name}`}
-                      onClick={() => void edit(row)}
+                      onClick={() => handleStartEdit(row)}
                     >
-                      <Pencil />
+                      <Pencil className="w-4 h-4" />
                     </button>
                     {tab === "categories" && (
                       <>
                         <button
+                          className="icon-button w-8 h-8 min-w-0 min-h-0"
                           aria-label="Mover para cima"
                           onClick={() => void move(row, -1)}
                         >
-                          <ArrowUp />
+                          <ArrowUp className="w-4 h-4" />
                         </button>
                         <button
+                          className="icon-button w-8 h-8 min-w-0 min-h-0"
                           aria-label="Mover para baixo"
                           onClick={() => void move(row, 1)}
                         >
-                          <ArrowDown />
+                          <ArrowDown className="w-4 h-4" />
                         </button>
                       </>
                     )}
                     {tab === "collections" && (
                       <button
+                        className="button secondary px-3 py-1.5 min-h-0 text-xs text-text-secondary"
                         onClick={() =>
                           void setStatus(
                             row,
@@ -412,6 +480,7 @@ export function OrganizerPage() {
                     )}
                     {tab === "pantry" && (
                       <button
+                        className="button secondary px-3 py-1.5 min-h-0 text-xs text-text-secondary"
                         onClick={() =>
                           void setStatus(
                             row,
@@ -423,11 +492,11 @@ export function OrganizerPage() {
                       </button>
                     )}
                     <button
-                      className="icon-button"
+                      className="icon-button danger w-8 h-8 min-w-0 min-h-0"
                       aria-label={`Excluir ${row.name}`}
-                      onClick={() => remove(row)}
+                      onClick={() => setDeleteConfirm(row)}
                     >
-                      <Trash2 />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 )
@@ -436,6 +505,135 @@ export function OrganizerPage() {
           ))}
         </div>
       )}
-    </>
+
+      {/* CUSTOM CONFIRM DIALOG FOR DELETION */}
+      <ConfirmDialog
+        isOpen={!!deleteConfirm}
+        title={`Excluir ${labels[tab].slice(0, -1)}`}
+        description={`Tem certeza que deseja remover permanentemente “${deleteConfirm?.name}”?`}
+        confirmLabel="Remover"
+        cancelLabel="Cancelar"
+        isDestructive={true}
+        onConfirm={remove}
+        onCancel={() => setDeleteConfirm(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={!!deleteImportConfirm}
+        title="Excluir Registro de Importação"
+        description="Tem certeza que deseja apagar o registro desta importação de mídia?"
+        confirmLabel="Remover"
+        cancelLabel="Cancelar"
+        isDestructive={true}
+        onConfirm={removeImport}
+        onCancel={() => setDeleteImportConfirm(null)}
+      />
+
+      {/* DIALOG FOR EDITING RECORDS */}
+      <Dialog isOpen={!!editingRow} onClose={() => setEditingRow(null)} title={`Editar ${labels[tab].slice(0, -1)}`}>
+        <div className="flex flex-col gap-4">
+          <label>
+            Nome
+            <input
+              value={editFields.name ?? ""}
+              onChange={(e) => setEditFields(prev => ({ ...prev, name: e.target.value }))}
+            />
+          </label>
+
+          {tab === "pantry" && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <label>
+                  Quantidade
+                  <input
+                    type="number"
+                    step="any"
+                    value={editFields.quantity ?? ""}
+                    onChange={(e) => setEditFields(prev => ({ ...prev, quantity: e.target.value ? Number(e.target.value) : null }))}
+                  />
+                </label>
+                <label>
+                  Unidade
+                  <input
+                    value={editFields.unit ?? ""}
+                    onChange={(e) => setEditFields(prev => ({ ...prev, unit: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <label>
+                Setor
+                <select
+                  value={editFields.sector ?? "Outros"}
+                  onChange={(e) => setEditFields(prev => ({ ...prev, sector: e.target.value }))}
+                >
+                  <option value="Outros">Outros</option>
+                  <option value="Hortifrúti">Hortifrúti</option>
+                  <option value="Açougue">Açougue</option>
+                  <option value="Laticínios">Laticínios</option>
+                  <option value="Mercearia">Mercearia</option>
+                  <option value="Padaria">Padaria</option>
+                  <option value="Congelados">Congelados</option>
+                  <option value="Bebidas">Bebidas</option>
+                </select>
+              </label>
+              <label>
+                Validade
+                <input
+                  type="date"
+                  value={editFields.expires_at ?? ""}
+                  onChange={(e) => setEditFields(prev => ({ ...prev, expires_at: e.target.value }))}
+                />
+              </label>
+              <label>
+                Observações
+                <textarea
+                  rows={3}
+                  value={editFields.notes ?? ""}
+                  onChange={(e) => setEditFields(prev => ({ ...prev, notes: e.target.value }))}
+                />
+              </label>
+            </>
+          )}
+
+          {tab === "collections" && (
+            <>
+              <label>
+                Descrição
+                <input
+                  value={editFields.description ?? ""}
+                  onChange={(e) => setEditFields(prev => ({ ...prev, description: e.target.value }))}
+                />
+              </label>
+              <label>
+                Ícone (Lucide name)
+                <input
+                  value={editFields.icon ?? ""}
+                  onChange={(e) => setEditFields(prev => ({ ...prev, icon: e.target.value }))}
+                />
+              </label>
+            </>
+          )}
+
+          {tab === "categories" && (
+            <label>
+              Ícone
+              <input
+                value={editFields.icon ?? ""}
+                onChange={(e) => setEditFields(prev => ({ ...prev, icon: e.target.value }))}
+              />
+            </label>
+          )}
+
+          <div className="flex justify-end gap-3 mt-4">
+            <button className="button secondary" onClick={() => setEditingRow(null)}>
+              Cancelar
+            </button>
+            <button className="button" onClick={saveEdits}>
+              Salvar
+            </button>
+          </div>
+        </div>
+      </Dialog>
+    </div>
   );
 }

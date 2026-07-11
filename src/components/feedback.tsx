@@ -8,15 +8,51 @@ export function ToastViewport(){
     const listener=(event:Event)=>{
       const toast=(event as CustomEvent<Toast>).detail
       setToasts(items=>[...items.slice(-3),toast])
-      window.setTimeout(()=>setToasts(items=>items.filter(item=>item.id!==toast.id)),5000)
+      window.setTimeout(()=>setToasts(items=>items.filter(item=>item.id!==toast.id)),6000)
     }
     window.addEventListener(toastEventName,listener)
     return()=>window.removeEventListener(toastEventName,listener)
   },[])
-  return <div className="toast-viewport" aria-live="polite" aria-atomic="false">{toasts.map(toast=><div className={`toast ${toast.kind}`} role={toast.kind==='error'?'alert':'status'} key={toast.id}>{toast.kind==='success'?<CheckCircle2/>:toast.kind==='error'?<XCircle/>:<Info/>}<div><strong>{toast.title}</strong>{toast.description&&<p>{toast.description}</p>}</div><button aria-label="Fechar aviso" onClick={()=>setToasts(items=>items.filter(item=>item.id!==toast.id))}><X/></button></div>)}</div>
+  return (
+    <div className="toast-viewport" aria-live="polite" aria-atomic="false">
+      {toasts.map(toast=>(
+        <div className={`toast ${toast.kind}`} role={toast.kind==='error'?'alert':'status'} key={toast.id}>
+          {toast.kind==='success'?<CheckCircle2/>:toast.kind==='error'?<XCircle/>:<Info/>}
+          <div style={{ flexGrow: 1 }}>
+            <strong style={{ display: 'block', fontSize: '14px' }}>{toast.title}</strong>
+            {toast.description&&<p>{toast.description}</p>}
+          </div>
+          {toast.actionLabel && toast.onAction && (
+            <button
+              onClick={() => {
+                toast.onAction?.();
+                setToasts(items=>items.filter(item=>item.id!==toast.id));
+              }}
+              style={{
+                background: 'var(--primary)',
+                color: 'var(--primary-foreground)',
+                border: 'none',
+                padding: '6px 10px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                fontWeight: '700',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                marginRight: '8px'
+              }}
+            >
+              {toast.actionLabel}
+            </button>
+          )}
+          <button aria-label="Fechar aviso" onClick={()=>setToasts(items=>items.filter(item=>item.id!==toast.id))}><X/></button>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function LoadingOverlay({open,title,description}:{open:boolean;title:string;description?:string}){
   if(!open)return null
   return <div className="loading-overlay" role="status" aria-live="assertive"><div className="loading-dialog"><LoaderCircle className="spinner"/><strong>{title}</strong>{description&&<p>{description}</p>}<span>Não feche esta página.</span></div></div>
 }
+
