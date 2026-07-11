@@ -3,5 +3,5 @@ project_id = "kooki"
 verify_jwt = true
 [functions.delete-account]
 verify_jwt = true
-[functions/public-recipe]
+[functions.public-recipe]
 verify_jwt = false
