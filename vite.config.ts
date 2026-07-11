@@ -224,7 +224,12 @@ function mediaExtractor(cobaltUrl: string, cobaltKey?: string): Plugin {
             const cobalt = await fetch(`${cobaltUrl.replace(/\/+$/, "")}/`, {
               method: "POST",
               headers,
-              body: JSON.stringify({ url: source.toString() }),
+              body: JSON.stringify({
+                url: source.toString(),
+                downloadMode: "audio",
+                audioFormat: "mp3",
+                audioBitrate: "64",
+              }),
             });
             const result = await cobalt.text();
             response.statusCode = cobalt.status;

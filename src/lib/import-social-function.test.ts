@@ -7,7 +7,7 @@ describe("Netlify import-social", () => {
     delete process.env.COBALT_API_URL;
   });
 
-  it("envia somente a URL e devolve o JSON do Cobalt", async () => {
+  it("solicita áudio MP3 leve e devolve o JSON do Cobalt", async () => {
     process.env.COBALT_API_URL = "https://cobalt.example/";
     const cobaltJson = {
       status: "tunnel",
@@ -42,6 +42,9 @@ describe("Netlify import-social", () => {
     const request = fetchMock.mock.calls[0][1] as RequestInit;
     expect(JSON.parse(String(request.body))).toEqual({
       url: "https://www.instagram.com/reel/abc/",
+      downloadMode: "audio",
+      audioFormat: "mp3",
+      audioBitrate: "64",
     });
   });
 });

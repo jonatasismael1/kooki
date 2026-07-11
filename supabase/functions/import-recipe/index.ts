@@ -240,6 +240,8 @@ async function downloadMedia(mediaUrl: string) {
   };
 }
 Deno.serve(async (req) => {
+  let failureStage = "request";
+  let activeJobId: string | undefined;
   if (req.method === "OPTIONS")
     return new Response("ok", { headers: corsHeaders });
   try {
@@ -261,6 +263,8 @@ Deno.serve(async (req) => {
       audioPath?: string;
       idempotencyKey?: string;
       replaceRecipeId?: string;
+      mediaSource?: "cobalt_audio";
+      mediaDurationSeconds?: number;
     };
     const month = new Date();
     month.setUTCDate(1);
@@ -358,10 +362,12 @@ Deno.serve(async (req) => {
         })
         .eq("id", existing.id);
     }
+    activeJobId = job.id;
     let raw = body.rawText ?? "";
     const key = Deno.env.get("OPENROUTER_API_KEY");
     if (!key) throw new Error("OPENROUTER_API_KEY não configurada no backend");
     if (body.audioPath) {
+      failureStage = "load_caption";
       if (normalized)
         try {
           raw = `LEGENDA:\n${(await extractSocial(new URL(normalized))).text}\n\n`;
@@ -376,14 +382,40 @@ Deno.serve(async (req) => {
           audio_path: body.audioPath,
         })
         .eq("id", job.id);
+      failureStage = "download_private_audio";
       const { data: file, error: fileError } = await admin.storage
         .from("recipe-audio")
         .download(body.audioPath);
       if (fileError) throw fileError;
+      if (
+        body.mediaSource === "cobalt_audio" &&
+        !file.type.startsWith("audio/")
+      )
+        throw new Error("O Cobalt não retornou um arquivo de áudio válido");
+      console.info(
+        JSON.stringify({
+          event: "import_media",
+          jobId: job.id,
+          stage: failureStage,
+          sizeBytes: file.size,
+          durationSeconds: body.mediaDurationSeconds ?? null,
+          contentType: file.type || "unknown",
+          mediaSource: body.mediaSource ?? "manual_upload",
+        }),
+      );
       try {
-        raw += `TRANSCRIÇÃO DO ÁUDIO/VÍDEO:\n${await transcribe(new Uint8Array(await file.arrayBuffer()), file.type || "audio/mpeg", key)}`;
+        failureStage = "read_audio";
+        const audioBytes = new Uint8Array(await file.arrayBuffer());
+        failureStage = "openrouter_transcription";
+        raw += `TRANSCRIÇÃO DO ÁUDIO/VÍDEO:\n${await transcribe(audioBytes, file.type || "audio/mpeg", key)}`;
       } finally {
-        await admin.storage.from("recipe-audio").remove([body.audioPath]);
+        const { error: cleanupError } = await admin.storage
+          .from("recipe-audio")
+          .remove([body.audioPath]);
+        if (cleanupError) {
+          failureStage = "cleanup_private_audio";
+          throw cleanupError;
+        }
       }
     } else if (normalized) {
       const source = new URL(normalized);
@@ -440,6 +472,7 @@ Deno.serve(async (req) => {
         .eq("id", job.id);
       return json({ jobId: job.id, status: "needs_manual_input" }, 422);
     }
+    failureStage = "openrouter_structure";
     await admin
       .from("recipe_import_jobs")
       .update({
@@ -490,6 +523,7 @@ Deno.serve(async (req) => {
         `OpenRouter respondeu ${response.status}: ${detail.slice(0, 300)}`,
       );
     }
+    failureStage = "validate_ai_output";
     const ai = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
@@ -497,6 +531,7 @@ Deno.serve(async (req) => {
       JSON.parse(ai.choices?.[0]?.message?.content ?? ""),
     );
     const conf = confidence(parsed, raw);
+    failureStage = "save_recipe";
     await admin
       .from("recipe_import_jobs")
       .update({ status: "saving", current_stage: "finalizando a receita" })
@@ -619,9 +654,26 @@ Deno.serve(async (req) => {
       status: conf === "low" ? "needs_review" : "completed",
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha inesperada";
+    const resourceLimited = /(compute|memory|resource|worker|cpu|too large|excede)/i.test(message);
+    console.error(
+      JSON.stringify({
+        event: "import_failure",
+        jobId: activeJobId ?? null,
+        stage: failureStage,
+        resourceLimited,
+        message,
+      }),
+    );
     return json(
-      { error: error instanceof Error ? error.message : "Falha inesperada" },
-      400,
+      {
+        error: resourceLimited
+          ? "Não foi possível transcrever dentro do limite de recursos. Tente novamente, use a legenda ou cole o texto manualmente."
+          : message,
+        errorCode: resourceLimited ? "resource_limit" : "import_failed",
+        stage: failureStage,
+      },
+      resourceLimited ? 422 : 400,
     );
   }
 });

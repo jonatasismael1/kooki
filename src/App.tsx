@@ -44,8 +44,10 @@ import { readableQuantity, scaleQuantity } from "./lib/product";
 import { normalizeUrl } from "./lib/import";
 import {
   cobaltErrorMessage,
+  estimateAudioDurationSeconds,
   inferMediaType,
   isTranscribableMedia,
+  resourceFallbackMessage,
   selectCobaltMedia,
   type CobaltResponse,
 } from "./lib/cobalt";
@@ -65,6 +67,8 @@ type Recipe = {
   recipe_steps?: Step[];
 };
 const maxSocialMediaBytes = 100 * 1024 * 1024;
+const maxSocialAudioBytes = 32 * 1024 * 1024;
+const maxSocialAudioDurationSeconds = 60 * 60;
 type Ingredient = IngredientInput & {
   id: string;
   quantity_text: string | null;
@@ -665,6 +669,8 @@ function RecipeEditor() {
       }
     } else {
       let audioPath: string | undefined;
+      let mediaSource: "cobalt_audio" | undefined;
+      let mediaDurationSeconds: number | undefined;
       let replaceRecipeId: string | undefined;
       let idempotencyKey: string | undefined;
       try {
@@ -714,6 +720,14 @@ function RecipeEditor() {
               }),
             });
             const cobalt = (await response.json()) as CobaltResponse;
+            console.info("[Kooki import]", {
+              stage: "cobalt_response",
+              httpStatus: response.status,
+              status: cobalt.status,
+              filename: cobalt.filename,
+              pickerCount: cobalt.picker?.length ?? 0,
+              errorCode: cobalt.error?.code,
+            });
             if (!response.ok)
               throw new Error(cobaltErrorMessage(cobalt.error?.code));
             const extracted = selectCobaltMedia(cobalt);
@@ -727,11 +741,34 @@ function RecipeEditor() {
             const declaredSize = Number(
               mediaResponse.headers.get("content-length") ?? 0,
             );
-            if (declaredSize > maxSocialMediaBytes)
-              throw new Error("O vídeo excede 100 MB.");
+            if (declaredSize > maxSocialAudioBytes)
+              throw new Error(
+                "O áudio excede o limite de transcrição. Use a legenda, cole o texto manualmente ou tente novamente.",
+              );
             const mediaBlob = await mediaResponse.blob();
-            if (mediaBlob.size > maxSocialMediaBytes)
-              throw new Error("O vídeo excede 100 MB.");
+            if (mediaBlob.size > maxSocialAudioBytes)
+              throw new Error(
+                "O áudio excede o limite de transcrição. Use a legenda, cole o texto manualmente ou tente novamente.",
+              );
+            const estimatedDuration = estimateAudioDurationSeconds(
+              mediaBlob.size,
+              64,
+            );
+            mediaDurationSeconds = estimatedDuration ?? undefined;
+            console.info("[Kooki import]", {
+              stage: "audio_downloaded",
+              sizeBytes: mediaBlob.size,
+              durationSeconds: estimatedDuration,
+              durationEstimated: true,
+              contentType: mediaBlob.type,
+            });
+            if (
+              estimatedDuration &&
+              estimatedDuration > maxSocialAudioDurationSeconds
+            )
+              throw new Error(
+                "O áudio tem mais de 60 minutos. Use a legenda, cole o texto manualmente ou tente novamente.",
+              );
             const contentType = inferMediaType(
               mediaBlob.type ||
                 mediaResponse.headers.get("content-type") ||
@@ -748,14 +785,19 @@ function RecipeEditor() {
             audioPath = await upload(
               new File([mediaBlob], filename, { type: contentType }),
             );
+            mediaSource = "cobalt_audio";
           }
         }
       } catch (extractionError) {
-        setError(
+        const message =
           extractionError instanceof Error
             ? extractionError.message
-            : "Falha no download ou upload da mídia",
-        );
+            : "Falha no download ou upload da mídia";
+        console.error("[Kooki import]", {
+          stage: "download_or_upload_failed",
+          message,
+        });
+        setError(resourceFallbackMessage(message));
         setBusy(false);
         return;
       }
@@ -767,6 +809,8 @@ function RecipeEditor() {
             sourceUrl: mode === "url" ? content : null,
             rawText: mode === "text" ? content : null,
             audioPath,
+            mediaSource,
+            mediaDurationSeconds,
             replaceRecipeId,
             idempotencyKey,
           },
@@ -785,7 +829,11 @@ function RecipeEditor() {
           } catch {
             message = e.message;
           }
-        setError(message);
+        console.error("[Kooki import]", {
+          stage: "transcription_or_structure_failed",
+          message,
+        });
+        setError(resourceFallbackMessage(message));
       } else {
         const result = data as {
           recipeId?: string;

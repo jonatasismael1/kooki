@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   cobaltErrorMessage,
+  estimateAudioDurationSeconds,
   inferMediaType,
   isTranscribableMedia,
+  resourceFallbackMessage,
   selectCobaltMedia,
 } from "./cobalt";
 
@@ -46,6 +48,13 @@ describe("Cobalt", () => {
     expect(isTranscribableMedia("image/jpeg", "capa.jpg")).toBe(false);
     expect(inferMediaType("application/octet-stream", "receita.mp4")).toBe(
       "video/mp4",
+    );
+  });
+
+  it("estima duração e apresenta fallback de recursos", () => {
+    expect(estimateAudioDurationSeconds(8_000_000, 64)).toBe(1000);
+    expect(resourceFallbackMessage("not having enough compute resources")).toContain(
+      "use a legenda",
     );
   });
 });

@@ -58,12 +58,41 @@ export default async (request: Request) => {
     const response = await fetch(`${cobaltUrl}/`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ url: source.toString() }),
+      body: JSON.stringify({
+        url: source.toString(),
+        downloadMode: "audio",
+        audioFormat: "mp3",
+        audioBitrate: "64",
+      }),
     });
     const payload = (await response.json()) as
       CobaltError | Record<string, unknown>;
+    console.info(
+      JSON.stringify({
+        event: "cobalt_response",
+        stage: "request_audio",
+        httpStatus: response.status,
+        status: payload.status,
+        filename: "filename" in payload ? payload.filename : undefined,
+        pickerCount:
+          "picker" in payload && Array.isArray(payload.picker)
+            ? payload.picker.length
+            : 0,
+        errorCode:
+          "error" in payload && payload.error && typeof payload.error === "object"
+            ? (payload.error as { code?: string }).code
+            : undefined,
+      }),
+    );
     return json(payload, response.status);
-  } catch {
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "cobalt_failure",
+        stage: "request_audio",
+        message: error instanceof Error ? error.message : "unknown",
+      }),
+    );
     return json(
       { status: "error", error: { code: "error.api.fetch.empty" } },
       502,

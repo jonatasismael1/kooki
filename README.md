@@ -73,7 +73,9 @@ Consulte os documentos em `docs/` para regras detalhadas.
 - Instagram e TikTok são detectados, mas devem cair no fluxo manual quando privados, limitados ou indisponíveis.
 - Áudio/vídeo pode ser enviado ao bucket privado (até 100 MB), é transcrito via OpenRouter STT e removido após o processamento.
 - A aquisição automática da mídia de Instagram/TikTok é best-effort; quando bloqueada, use a aba **Áudio/Vídeo**.
-- Em produção, `import-social` é um proxy leve: envia somente `{ url }` à instância própria configurada em `COBALT_API_URL` e devolve o JSON original do Cobalt. O navegador trata `redirect`, `tunnel` e `picker`, baixa a mídia diretamente, valida o limite de 100 MB e envia ao Storage privado. A Edge Function transcreve e exclui o arquivo em `finally`.
+- Em produção, `import-social` é um proxy leve: pede ao Cobalt somente áudio MP3 a 64 kbps (`downloadMode=audio`) e devolve seu JSON, sem carregar a mídia na Function. O navegador trata `redirect`, `tunnel` e `picker`, baixa o áudio diretamente e o envia ao Storage privado.
+- A transcrição social aceita até 32 MB e 60 minutos estimados. O upload manual continua aceitando até 100 MB. Ao exceder recursos ou limites, a interface oferece legenda, texto manual ou nova tentativa.
+- A Edge Function registra etapa, tamanho, duração estimada e falha; transcreve e exclui o arquivo temporário em `finally`.
 - O endpoint local `/api/media-extract` mantém `yt-dlp` como ferramenta de diagnóstico/fallback; a rota usada pela interface (`/api/import-social`) segue o mesmo contrato JSON da produção.
 - A Netlify está conectada ao branch `main` do GitHub; cada `git push` inicia build e deploy contínuos.
 - Sem Supabase configurado, a UI abre vazia somente para inspeção; salvar informa claramente a configuração ausente e não exibe dados falsos.

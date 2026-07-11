@@ -22,13 +22,13 @@ export function selectCobaltMedia(result: CobaltResponse) {
     return { url: result.url, filename: result.filename ?? "social-video.mp4" };
 
   if (result.status === "picker") {
-    const video = result.picker?.find((item) => item.type === "video");
-    if (video) return { url: video.url, filename: "social-video.mp4" };
     if (result.audio)
       return {
         url: result.audio,
         filename: result.audioFilename ?? "social-audio.mp3",
       };
+    const video = result.picker?.find((item) => item.type === "video");
+    if (video) return { url: video.url, filename: "social-video.mp4" };
   }
 
   if (result.status === "error")
@@ -73,4 +73,15 @@ export function inferMediaType(contentType: string, filename: string) {
       opus: "audio/ogg",
     }[extension ?? ""] ?? contentType
   );
+}
+
+export function estimateAudioDurationSeconds(sizeBytes: number, bitrateKbps = 64) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || bitrateKbps <= 0) return null;
+  return Math.ceil((sizeBytes * 8) / (bitrateKbps * 1000));
+}
+
+export function resourceFallbackMessage(message: string) {
+  if (!/(compute|memory|resource|worker|cpu|limit|too large|excede)/i.test(message))
+    return message;
+  return "Não foi possível transcrever dentro do limite de recursos. Tente novamente, use a legenda ou cole o texto manualmente.";
 }

@@ -42,7 +42,8 @@
 
 ## Riscos
 
-- Netlify Functions não baixa mais arquivos: funciona apenas como proxy JSON para o Cobalt externo, evitando estouro de compute/memória.
+- Netlify Functions não baixa mais arquivos: funciona apenas como proxy JSON e solicita áudio MP3 a 64 kbps ao Cobalt externo, evitando estouro de compute/memória.
+- O caminho social limita a transcrição a 32 MB e 60 minutos estimados; logs estruturados identificam tamanho, duração e etapa da falha.
 - Downloads diretos no navegador dependem de CORS no destino; túneis da instância Cobalt atual respondem com `Access-Control-Allow-Origin: *`.
 - APIs de voz, Wake Lock e notificações variam por navegador e precisam de fallback manual.
 - Fotos e mídia exigem limites, MIME real e URLs assinadas.
