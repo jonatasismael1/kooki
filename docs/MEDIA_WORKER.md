@@ -2,6 +2,8 @@
 
 Worker Node portátil que usa PostgreSQL/Supabase como fila, Cobalt como extrator e ffmpeg/ffprobe para normalização e segmentação. Não recebe chamadas do navegador e não depende de APIs específicas do Railway.
 
+Healthcheck publicado: `https://kooki-media-worker-production.up.railway.app/health`.
+
 ## Configuração
 
 Copie `media-worker/.env.example` para `media-worker/.env` e preencha os secrets apenas no servidor. O frontend nunca recebe `SUPABASE_SERVICE_ROLE_KEY` nem `OPENROUTER_API_KEY`.
