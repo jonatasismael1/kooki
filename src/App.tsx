@@ -42,6 +42,13 @@ import { CookModePage } from "./pages/CookModePage";
 import { SharedRecipePage } from "./pages/SharedRecipePage";
 import { readableQuantity, scaleQuantity } from "./lib/product";
 import { normalizeUrl } from "./lib/import";
+import {
+  cobaltErrorMessage,
+  inferMediaType,
+  isTranscribableMedia,
+  selectCobaltMedia,
+  type CobaltResponse,
+} from "./lib/cobalt";
 import "./index.css";
 
 type Recipe = {
@@ -57,6 +64,7 @@ type Recipe = {
   recipe_ingredients?: Ingredient[];
   recipe_steps?: Step[];
 };
+const maxSocialMediaBytes = 100 * 1024 * 1024;
 type Ingredient = IngredientInput & {
   id: string;
   quantity_text: string | null;
@@ -600,8 +608,8 @@ function RecipeEditor() {
   }, [error]);
   async function upload(file: File) {
     if (!supabase) throw new Error("Supabase indisponível");
-    if (file.size > 50 * 1024 * 1024)
-      throw new Error("O arquivo deve ter no máximo 50 MB.");
+    if (file.size > maxSocialMediaBytes)
+      throw new Error("O arquivo deve ter no máximo 100 MB.");
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -703,35 +711,43 @@ function RecipeEditor() {
               },
               body: JSON.stringify({
                 url: content,
-                replaceRecipeId,
-                idempotencyKey,
               }),
             });
-            const result = (await response.json()) as {
-              recipeId?: string;
-              status?: string;
-              error?: string;
-              message?: string;
-            };
+            const cobalt = (await response.json()) as CobaltResponse;
             if (!response.ok)
+              throw new Error(cobaltErrorMessage(cobalt.error?.code));
+            const extracted = selectCobaltMedia(cobalt);
+            const mediaResponse = await fetch(extracted.url, {
+              redirect: "follow",
+            });
+            if (!mediaResponse.ok)
               throw new Error(
-                result.error ??
-                  result.message ??
-                  "Falha na importação do vídeo",
+                `Não foi possível baixar a mídia (${mediaResponse.status}).`,
               );
-            if (!result.recipeId)
-              throw new Error(
-                result.message ?? "A importação não gerou uma receita",
-              );
-            notify(
-              "success",
-              result.status === "needs_review"
-                ? "Receita criada para revisão"
-                : "Vídeo transcrito e receita importada",
+            const declaredSize = Number(
+              mediaResponse.headers.get("content-length") ?? 0,
             );
-            setBusy(false);
-            nav(`/receitas/${result.recipeId}`);
-            return;
+            if (declaredSize > maxSocialMediaBytes)
+              throw new Error("O vídeo excede 100 MB.");
+            const mediaBlob = await mediaResponse.blob();
+            if (mediaBlob.size > maxSocialMediaBytes)
+              throw new Error("O vídeo excede 100 MB.");
+            const contentType = inferMediaType(
+              mediaBlob.type ||
+                mediaResponse.headers.get("content-type") ||
+                "application/octet-stream",
+              extracted.filename,
+            );
+            if (!isTranscribableMedia(contentType, extracted.filename))
+              throw new Error(
+                "O Cobalt retornou uma imagem, não um vídeo ou áudio transcrevível.",
+              );
+            const filename =
+              extracted.filename.replace(/[^\w.-]+/g, "-") ||
+              "social-video.mp4";
+            audioPath = await upload(
+              new File([mediaBlob], filename, { type: contentType }),
+            );
           }
         }
       } catch (extractionError) {
@@ -861,7 +877,7 @@ function RecipeEditor() {
               />
             </label>
             <p className="notice">
-              Até 50 MB. O arquivo é privado, transcrito no backend e excluído
+              Até 100 MB. O arquivo é privado, transcrito no backend e excluído
               após o processamento.
             </p>
           </>

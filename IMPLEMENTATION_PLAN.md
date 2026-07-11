@@ -30,7 +30,7 @@
 - [~] Fase 5 — Voz/leitura e persistência local; notificação e todos os comandos de timer pendentes.
 - [~] Fase 6 — Cadastro mínimo e sugestões; gestão completa e desconto confirmado da despensa pendentes.
 - [~] Fase 7 — Link público/revogação/cópia básicos; link privado, texto, visual e compras no compartilhado pendentes.
-- [ ] Release — documentação, validações, GitHub e Netlify.
+- [~] Release — GitHub, Netlify e deploy contínuo concluídos; auditoria funcional ampla permanece em andamento.
 
 ## Decisões
 
@@ -42,7 +42,8 @@
 
 ## Riscos
 
-- Netlify Functions não é ambiente apropriado para executar binário `yt-dlp`; exige Cobalt externo.
+- Netlify Functions não baixa mais arquivos: funciona apenas como proxy JSON para o Cobalt externo, evitando estouro de compute/memória.
+- Downloads diretos no navegador dependem de CORS no destino; túneis da instância Cobalt atual respondem com `Access-Control-Allow-Origin: *`.
 - APIs de voz, Wake Lock e notificações variam por navegador e precisam de fallback manual.
 - Fotos e mídia exigem limites, MIME real e URLs assinadas.
 - Mudanças amplas exigem validação RLS integrada antes da publicação.

@@ -8,7 +8,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-const maxMediaBytes = 50 * 1024 * 1024;
+const maxMediaBytes = 100 * 1024 * 1024;
 
 async function ensureYtDlp() {
   const dir = path.resolve("logs");
@@ -49,9 +49,9 @@ function runExtractor(executable: string, sourceUrl: string, output: string) {
       [
         "--no-playlist",
         "--max-filesize",
-        "50M",
+        "100M",
         "-f",
-        "b[filesize<50M]/b",
+        "b[filesize<100M]/b",
         "-o",
         output,
         sourceUrl,
@@ -116,9 +116,9 @@ async function tryCobalt(sourceUrl: string, output: string) {
   if (!media.ok)
     throw new Error(`Download do Cobalt respondeu ${media.status}`);
   const declared = Number(media.headers.get("content-length") ?? 0);
-  if (declared > maxMediaBytes) throw new Error("Vídeo excede 50 MB");
+  if (declared > maxMediaBytes) throw new Error("Vídeo excede 100 MB");
   const bytes = new Uint8Array(await media.arrayBuffer());
-  if (bytes.length > maxMediaBytes) throw new Error("Vídeo excede 50 MB");
+  if (bytes.length > maxMediaBytes) throw new Error("Vídeo excede 100 MB");
   await fs.writeFile(output, bytes);
   return true;
 }
@@ -147,7 +147,7 @@ async function downloadSocial(sourceUrl: string, output: string) {
   }
 }
 
-function mediaExtractor(supabaseUrl: string, publishableKey: string): Plugin {
+function mediaExtractor(cobaltUrl: string, cobaltKey?: string): Plugin {
   return {
     name: "kooki-local-media-extractor",
     configureServer(server) {
@@ -172,7 +172,7 @@ function mediaExtractor(supabaseUrl: string, publishableKey: string): Plugin {
             await downloadSocial(source.toString(), output);
             const stat = await fs.stat(output);
             if (stat.size > maxMediaBytes)
-              throw new Error("Vídeo excede 50 MB");
+              throw new Error("Vídeo excede 100 MB");
             response.statusCode = 200;
             response.setHeader("Content-Type", "video/mp4");
             response.setHeader("Content-Length", String(stat.size));
@@ -196,8 +196,6 @@ function mediaExtractor(supabaseUrl: string, publishableKey: string): Plugin {
       server.middlewares.use(
         "/api/import-social",
         async (request, response) => {
-          let output = "";
-          let storagePath = "";
           const authorization = request.headers.authorization;
           try {
             if (
@@ -205,14 +203,12 @@ function mediaExtractor(supabaseUrl: string, publishableKey: string): Plugin {
               !authorization?.startsWith("Bearer ")
             )
               throw new Error("Sessão inválida");
-            if (!supabaseUrl || !publishableKey)
-              throw new Error("Supabase não configurado no servidor local");
-            const { url, replaceRecipeId, idempotencyKey } = JSON.parse(
-              await readBody(request),
-            ) as {
+            if (!cobaltUrl)
+              throw new Error(
+                "COBALT_API_URL não configurada no servidor local",
+              );
+            const { url } = JSON.parse(await readBody(request)) as {
               url: string;
-              replaceRecipeId?: string;
-              idempotencyKey?: string;
             };
             const source = new URL(url);
             const host = source.hostname.replace(/^www\./, "");
@@ -220,57 +216,20 @@ function mediaExtractor(supabaseUrl: string, publishableKey: string): Plugin {
               !["instagram.com", "tiktok.com", "vm.tiktok.com"].includes(host)
             )
               throw new Error("Plataforma não permitida");
-            const authHeaders = {
-              apikey: publishableKey,
-              Authorization: authorization,
+            const headers: Record<string, string> = {
+              Accept: "application/json",
+              "Content-Type": "application/json",
             };
-            const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
-              headers: authHeaders,
+            if (cobaltKey) headers.Authorization = `Api-Key ${cobaltKey}`;
+            const cobalt = await fetch(`${cobaltUrl.replace(/\/+$/, "")}/`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ url: source.toString() }),
             });
-            if (!userResponse.ok)
-              throw new Error("Não foi possível validar sua sessão");
-            const user = (await userResponse.json()) as { id: string };
-            output = path.join(tmpdir(), `kooki-${crypto.randomUUID()}.mp4`);
-            await downloadSocial(source.toString(), output);
-            const stat = await fs.stat(output);
-            if (stat.size > maxMediaBytes)
-              throw new Error("Vídeo excede 50 MB");
-            storagePath = `${user.id}/${crypto.randomUUID()}-social-video.mp4`;
-            const encodedPath = storagePath
-              .split("/")
-              .map(encodeURIComponent)
-              .join("/");
-            const upload = await fetch(
-              `${supabaseUrl}/storage/v1/object/recipe-audio/${encodedPath}`,
-              {
-                method: "POST",
-                headers: { ...authHeaders, "Content-Type": "video/mp4" },
-                body: new Uint8Array(await fs.readFile(output)),
-              },
-            );
-            if (!upload.ok)
-              throw new Error(
-                `Falha ao enviar vídeo: ${(await upload.text()).slice(0, 250)}`,
-              );
-            const invocation = await fetch(
-              `${supabaseUrl}/functions/v1/import-recipe`,
-              {
-                method: "POST",
-                headers: { ...authHeaders, "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  inputType: "url",
-                  sourceUrl: source.toString(),
-                  audioPath: storagePath,
-                  replaceRecipeId,
-                  idempotencyKey,
-                }),
-              },
-            );
-            const result = await invocation.text();
-            response.statusCode = invocation.status;
+            const result = await cobalt.text();
+            response.statusCode = cobalt.status;
             response.setHeader("Content-Type", "application/json");
             response.end(result);
-            storagePath = "";
           } catch (error) {
             response.statusCode = 422;
             response.setHeader("Content-Type", "application/json");
@@ -282,20 +241,6 @@ function mediaExtractor(supabaseUrl: string, publishableKey: string): Plugin {
                     : "Falha na importação social",
               }),
             );
-          } finally {
-            if (output)
-              await fs.rm(output, { force: true }).catch(() => undefined);
-            if (storagePath && authorization)
-              await fetch(
-                `${supabaseUrl}/storage/v1/object/recipe-audio/${storagePath.split("/").map(encodeURIComponent).join("/")}`,
-                {
-                  method: "DELETE",
-                  headers: {
-                    apikey: publishableKey,
-                    Authorization: authorization,
-                  },
-                },
-              ).catch(() => undefined);
           }
         },
       );
@@ -307,7 +252,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
     plugins: [
-      mediaExtractor(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_PUBLISHABLE_KEY),
+      mediaExtractor(env.COBALT_API_URL, env.COBALT_API_KEY),
       react(),
       tailwindcss(),
       VitePWA({

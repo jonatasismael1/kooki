@@ -71,7 +71,9 @@ Consulte os documentos em `docs/` para regras detalhadas.
 
 - YouTube funciona quando o conteúdo textual é acessível; legendas/transcrição exigem adapter e credenciais de provedor.
 - Instagram e TikTok são detectados, mas devem cair no fluxo manual quando privados, limitados ou indisponíveis.
-- Áudio/vídeo pode ser enviado ao bucket privado (até 50 MB), é transcrito via OpenRouter STT e removido após o processamento.
+- Áudio/vídeo pode ser enviado ao bucket privado (até 100 MB), é transcrito via OpenRouter STT e removido após o processamento.
 - A aquisição automática da mídia de Instagram/TikTok é best-effort; quando bloqueada, use a aba **Áudio/Vídeo**.
-- O extrator tenta primeiro a instância própria configurada em `COBALT_API_URL`/`COBALT_API_KEY`; se não estiver configurada ou falhar no desenvolvimento local, usa o `yt-dlp` portátil em `logs/`. Para produção, hospede o Cobalt próprio e não dependa de instâncias públicas sem autorização.
+- Em produção, `import-social` é um proxy leve: envia somente `{ url }` à instância própria configurada em `COBALT_API_URL` e devolve o JSON original do Cobalt. O navegador trata `redirect`, `tunnel` e `picker`, baixa a mídia diretamente, valida o limite de 100 MB e envia ao Storage privado. A Edge Function transcreve e exclui o arquivo em `finally`.
+- O endpoint local `/api/media-extract` mantém `yt-dlp` como ferramenta de diagnóstico/fallback; a rota usada pela interface (`/api/import-social`) segue o mesmo contrato JSON da produção.
+- A Netlify está conectada ao branch `main` do GitHub; cada `git push` inicia build e deploy contínuos.
 - Sem Supabase configurado, a UI abre vazia somente para inspeção; salvar informa claramente a configuração ausente e não exibe dados falsos.

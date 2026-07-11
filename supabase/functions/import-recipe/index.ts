@@ -67,6 +67,7 @@ const schema = z
   .strict();
 const recipeJsonSchema = z.toJSONSchema(schema);
 const pipelineVersion = "3-video-transcription";
+const maxMediaBytes = 100 * 1024 * 1024;
 function confidence(x: z.infer<typeof schema>, raw: string) {
   let score = 100;
   if (!x.ingredients.length) score -= 55;
@@ -190,8 +191,8 @@ function audioFormat(contentType: string) {
   return "mp3";
 }
 async function transcribe(bytes: Uint8Array, contentType: string, key: string) {
-  if (bytes.length > 50 * 1024 * 1024)
-    throw new Error("Mídia excede o limite de 50 MB");
+  if (bytes.length > maxMediaBytes)
+    throw new Error("Mídia excede o limite de 100 MB");
   const response = await fetch(
     "https://openrouter.ai/api/v1/audio/transcriptions",
     {
@@ -228,11 +229,11 @@ async function downloadMedia(mediaUrl: string) {
   });
   if (!response.ok) throw new Error(`Mídia respondeu ${response.status}`);
   const declared = Number(response.headers.get("content-length") ?? 0);
-  if (declared > 50 * 1024 * 1024)
-    throw new Error("Mídia excede o limite de 50 MB");
+  if (declared > maxMediaBytes)
+    throw new Error("Mídia excede o limite de 100 MB");
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length > 50 * 1024 * 1024)
-    throw new Error("Mídia excede o limite de 50 MB");
+  if (bytes.length > maxMediaBytes)
+    throw new Error("Mídia excede o limite de 100 MB");
   return {
     bytes,
     contentType: response.headers.get("content-type") ?? "video/mp4",
@@ -570,44 +571,36 @@ Deno.serve(async (req) => {
         : Promise.resolve({ data: [] }),
     ]);
     await Promise.all([
-      admin
-        .from("recipe_ingredients")
-        .insert(
-          parsed.ingredients.map((i, n) => ({
-            ...i,
-            recipe_id: recipe.id,
-            position: n,
-          })),
-        ),
-      admin
-        .from("recipe_steps")
-        .insert(
-          parsed.steps.map((s) => ({
-            recipe_id: recipe.id,
-            position: s.order,
-            instruction: s.instruction,
-            section: s.section,
-          })),
-        ),
+      admin.from("recipe_ingredients").insert(
+        parsed.ingredients.map((i, n) => ({
+          ...i,
+          recipe_id: recipe.id,
+          position: n,
+        })),
+      ),
+      admin.from("recipe_steps").insert(
+        parsed.steps.map((s) => ({
+          recipe_id: recipe.id,
+          position: s.order,
+          instruction: s.instruction,
+          section: s.section,
+        })),
+      ),
       categoryRows?.length
-        ? admin
-            .from("recipe_categories")
-            .insert(
-              categoryRows.map((item) => ({
-                recipe_id: recipe.id,
-                category_id: item.id,
-              })),
-            )
+        ? admin.from("recipe_categories").insert(
+            categoryRows.map((item) => ({
+              recipe_id: recipe.id,
+              category_id: item.id,
+            })),
+          )
         : Promise.resolve(),
       tagRows?.length
-        ? admin
-            .from("recipe_tags")
-            .insert(
-              tagRows.map((item) => ({
-                recipe_id: recipe.id,
-                tag_id: item.id,
-              })),
-            )
+        ? admin.from("recipe_tags").insert(
+            tagRows.map((item) => ({
+              recipe_id: recipe.id,
+              tag_id: item.id,
+            })),
+          )
         : Promise.resolve(),
       admin.from("usage_events").insert({ user_id: user.id, job_id: job.id }),
       admin
