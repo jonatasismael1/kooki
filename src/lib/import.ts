@@ -1,0 +1,4 @@
+export type Platform='youtube'|'instagram'|'tiktok'|'blog'
+const tracking=new Set(['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid'])
+export function detectPlatform(value:string):Platform{const host=new URL(value).hostname.replace(/^www\./,'');if(host==='youtube.com'||host==='youtu.be')return'youtube';if(host==='instagram.com')return'instagram';if(host==='tiktok.com'||host.endsWith('.tiktok.com'))return'tiktok';return'blog'}
+export function normalizeUrl(value:string){const u=new URL(value);if(!['http:','https:'].includes(u.protocol))throw new Error('Protocolo não permitido');u.hostname=u.hostname.toLowerCase();u.hash='';const keys:string[]=[];u.searchParams.forEach((_value,key)=>keys.push(key));for(const key of keys)if(tracking.has(key)||key.startsWith('utm_'))u.searchParams.delete(key);u.pathname=u.pathname.replace(/\/$/,'')||'/';return u.toString()}

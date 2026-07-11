@@ -1,0 +1,3 @@
+import {createClient} from 'npm:@supabase/supabase-js@2'
+import {corsHeaders,json} from '../_shared/cors.ts'
+Deno.serve(async req=>{if(req.method==='OPTIONS')return new Response('ok',{headers:corsHeaders});const auth=req.headers.get('Authorization');if(!auth)return json({error:'Não autenticado'},401);const url=Deno.env.get('SUPABASE_URL')!;const anon=createClient(url,Deno.env.get('SUPABASE_ANON_KEY')!,{global:{headers:{Authorization:auth}}});const {data:{user}}=await anon.auth.getUser();if(!user)return json({error:'Sessão inválida'},401);const admin=createClient(url,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);const {error}=await admin.auth.admin.deleteUser(user.id);return error?json({error:error.message},400):json({ok:true})})

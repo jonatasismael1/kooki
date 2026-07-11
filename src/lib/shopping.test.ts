@@ -1,0 +1,3 @@
+import {describe,expect,it} from 'vitest'
+import {consolidateIngredients,unitsCompatible} from './shopping'
+describe('compras',()=>{it('não converte unidades incompatíveis',()=>expect(unitsCompatible('g','ml')).toBe(false));it('consolida nome e unidade iguais',()=>expect(consolidateIngredients([{name:'Farinha',normalized_name:'farinha',quantity:100,normalized_unit:'g'},{name:'farinha',normalized_name:'farinha',quantity:50,normalized_unit:'g'}])[0].quantity).toBe(150));it('preserva quantidades sem unidade',()=>expect(consolidateIngredients([{name:'Ovo',normalized_name:'ovo',quantity:2,normalized_unit:null},{name:'Ovo',normalized_name:'ovo',quantity:1,normalized_unit:null}])).toHaveLength(2))})

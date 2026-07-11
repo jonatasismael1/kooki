@@ -1,0 +1,10 @@
+import { detectPlatform } from './import'
+
+export type LocalIngredient={id:string;name:string;normalized_name:string|null;quantity:number|null;normalized_unit:string|null;quantity_text:string|null;notes:string|null;sector:string;position:number}
+export type LocalStep={id:string;instruction:string;position:number}
+export type LocalRecipe={id:string;title:string;description:string|null;servings:number|null;status:'draft'|'needs_review'|'ready'|'archived';source_platform:string|null;source_url?:string|null;created_at:string;recipe_ingredients:LocalIngredient[];recipe_steps:LocalStep[]}
+const key='kooki-local-recipes'
+export function getLocalRecipes():LocalRecipe[]{try{return JSON.parse(localStorage.getItem(key)??'[]') as LocalRecipe[]}catch{return[]}}
+export function getLocalRecipe(id:string){return getLocalRecipes().find(recipe=>recipe.id===id)??null}
+export function saveLocalRecipe(input:{title?:string;description?:string;sourceUrl?:string}):LocalRecipe{if(input.sourceUrl&&!['http:','https:'].includes(new URL(input.sourceUrl).protocol))throw new Error('Protocolo inválido');const platform=input.sourceUrl?detectPlatform(input.sourceUrl):'manual';const experimental=platform==='instagram'||platform==='tiktok';const recipe:LocalRecipe={id:crypto.randomUUID(),title:input.title?.trim()||`Receita do ${platform}`,description:experimental?'Não foi possível extrair este conteúdo automaticamente. Cole a legenda ou transcrição para completar a receita.':input.description?.trim()||null,servings:null,status:experimental?'needs_review':'ready',source_platform:platform,source_url:input.sourceUrl??null,created_at:new Date().toISOString(),recipe_ingredients:[],recipe_steps:[]};localStorage.setItem(key,JSON.stringify([recipe,...getLocalRecipes()]));return recipe}
+export function deleteLocalRecipe(id:string){localStorage.setItem(key,JSON.stringify(getLocalRecipes().filter(recipe=>recipe.id!==id)))}
