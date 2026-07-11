@@ -22,6 +22,18 @@ async function textualFallback(job: Job) {
   if (!job.normalized_url) return "";
   try {
     const url = new URL(job.normalized_url);
+    if (job.source_platform === "instagram") {
+      const match = url.pathname.match(/^\/(?:reel|p)\/([\w-]+)/);
+      if (match) {
+        const embed = `https://www.instagram.com/reel/${match[1]}/embed/captioned/`;
+        const r = await fetch(embed, { signal: AbortSignal.timeout(config.MEDIA_IDLE_TIMEOUT_SECONDS * 1000) });
+        const html = await r.text();
+        const caption = html.match(/<div class="Caption">([\s\S]*?)<div class="CaptionComments">/i)?.[1] ?? "";
+        return caption.replace(/<br\s*\/?\s*>/gi, "\n").replace(/<[^>]+>/g, " ")
+          .replace(/&amp;/g, "&").replace(/&quot;/g, "\"").replace(/&#039;|&apos;/g, "'")
+          .replace(/\s+/g, " ").trim().slice(0, 30_000);
+      }
+    }
     if (job.source_platform === "tiktok") {
       const r = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url.toString())}`);
       const data = await r.json() as { title?: string }; return data.title ?? "";
@@ -79,9 +91,11 @@ async function processJob(job: Job) {
     const code = error instanceof WorkerError ? error.code : "NETWORK_ERROR";
     const retryable = error instanceof WorkerError && error.retryable && job.attempts < config.MAX_JOB_ATTEMPTS;
     logError("job_failed", error, { job_id: job.id, platform: job.source_platform, stage: job.status, attempt: job.attempts, error_code: code });
+    const manualFallback = code.startsWith("COBALT_") || code === "MEDIA_HAS_NO_AUDIO" || code === "UNSUPPORTED_MEDIA";
     await updateJob(job.id, retryable ? { status: "pending", current_stage: "Tentaremos novamente", error_code: code,
       error_message: friendly(code), locked_by: null, lease_until: null }
-      : { status: code === "JOB_CANCELLED" ? "cancelled" : "failed", progress: 100, current_stage: "Importação não concluída",
+      : { status: code === "JOB_CANCELLED" ? "cancelled" : manualFallback ? "needs_manual_input" : "failed", progress: 100,
+        current_stage: manualFallback ? "Precisamos de mais informações" : "Importação não concluída",
         error_code: code, error_message: friendly(code), completed_at: new Date().toISOString(), locked_by: null, lease_until: null });
   } finally { clearInterval(beat); await clean(directory); activeJobs--; }
 }
