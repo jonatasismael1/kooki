@@ -422,6 +422,15 @@ input.search {
 /* ===================================================
    CARDS & LAYOUT
    =================================================== */
+.dashboard-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  padding: 20px 16px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+
 .hero {
   background: linear-gradient(135deg, #efe2d5, #f5ece5);
   border-radius: var(--radius-lg);
@@ -1141,6 +1150,10 @@ progress::-moz-progress-bar {
   .form-card {
     padding: 28px 32px;
     gap: 20px;
+  }
+
+  .dashboard-card {
+    padding: 28px 32px;
   }
 
   .manage-list article {

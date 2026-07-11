@@ -642,7 +642,7 @@ function Dashboard() {
       </header>
 
       {/* PLATFORM-DETECTING QUICK IMPORT BAR */}
-      <section style={{ background: "var(--surface)", border: "1px solid var(--border)", padding: "16px", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-sm)", display: "flex", flexDirection: "column", gap: "12px" }}>
+      <section className="dashboard-card flex flex-col gap-3">
         <h3 style={{ fontFamily: "'Lora', serif", fontWeight: 600, fontSize: "15px" }}>Importar de Link</h3>
         <form onSubmit={handleQuickImport} className="flex gap-2 items-center">
           <div className="relative flex-grow">
@@ -684,7 +684,7 @@ function Dashboard() {
       </section>
 
       {/* QUICK ACTIONS ROW */}
-      <section>
+      <section className="dashboard-card flex flex-col gap-3">
         <h2 className="text-lg mb-3">Ações rápidas</h2>
         <div className="quick">
           <button onClick={() => navigate("/receitas/nova?mode=manual")}>
@@ -712,7 +712,7 @@ function Dashboard() {
 
       {/* BACKGROUND JOBS IN PROGRESS */}
       {activeJobs.length > 0 && (
-        <section className="flex flex-col gap-3">
+        <section className="dashboard-card flex flex-col gap-3">
           <h2 className="text-lg">Processando em segundo plano</h2>
           <div className="flex flex-col gap-3">
             {activeJobs.map((job) => (
@@ -757,15 +757,15 @@ function Dashboard() {
         >
           <span style={{ display: "flex", alignItems: "center", gap: "8px", flexGrow: 1 }}>
             <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />
-            {reviews} importação{reviews > 1 ? "ões" : ""} aguardando revisão manual.
+            {reviews} {reviews === 1 ? "importação aguardando" : "importações aguardando"} revisão manual.
           </span>
           <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "2px", whiteSpace: "nowrap", flexShrink: 0 }}>Revisar <ChevronRight style={{ width: 14, height: 14 }} /></span>
         </button>
       )}
 
       {/* TODAY'S PLAN */}
-      <section className="bg-surface border border-border p-5 rounded-2xl shadow-sm">
-        <h2 className="text-lg mb-3">Para cozinhar hoje</h2>
+      <section className="dashboard-card flex flex-col gap-3">
+        <h2 className="text-lg">Para cozinhar hoje</h2>
         {todayItems.length === 0 ? (
           <div className="text-center py-4 text-text-secondary text-sm">
             Nenhuma refeição planejada para hoje.
@@ -793,8 +793,8 @@ function Dashboard() {
       </section>
 
       {/* ACTIVE SHOPPING LIST STATUS */}
-      <section className="bg-surface border border-border p-5 rounded-2xl shadow-sm">
-        <h2 className="text-lg mb-3">Lista de compras ativa</h2>
+      <section className="dashboard-card flex flex-col gap-3">
+        <h2 className="text-lg">Lista de compras ativa</h2>
         {activeList ? (
           <NavLink to="/compras" className="block text-decoration-none color-inherit hover:scale-[1.01]">
             <div className="flex justify-between items-center mb-2">
@@ -831,8 +831,8 @@ function Dashboard() {
 
       {/* CATEGORIES */}
       {categories.length > 0 && (
-        <section>
-          <h2 className="text-lg mb-3">Categorias</h2>
+        <section className="dashboard-card flex flex-col gap-3">
+          <h2 className="text-lg">Categorias</h2>
           <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
             {categories.map((c) => (
               <button
@@ -851,8 +851,8 @@ function Dashboard() {
 
       {/* FAVORITE RECIPES */}
       {favorites.length > 0 && (
-        <section>
-          <div className="flex justify-between items-center mb-3">
+        <section className="dashboard-card flex flex-col gap-3">
+          <div className="flex justify-between items-center">
             <h2 className="text-lg">Receitas favoritas</h2>
             <NavLink to="/receitas?favorites=true" className="text-xs text-primary font-bold hover:underline">Ver todas</NavLink>
           </div>
