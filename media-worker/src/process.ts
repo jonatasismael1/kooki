@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { config } from "./config.js";
 import { log } from "./log.js";
 import { WorkerError } from "./types.js";
+import { normalizeCobaltTunnelUrl } from "./cobalt-url.js";
 
 type Cobalt = { status?: string; url?: string; filename?: string; audio?: string;
   picker?: Array<{ type?: string; url?: string }>; error?: { code?: string } };
@@ -28,7 +29,13 @@ async function cobalt(url: string, body: Record<string, unknown>) {
   finally { clearTimeout(timeout); }
 }
 function mediaUrl(result: Cobalt, preferVideo = false) {
-  if ((result.status === "tunnel" || result.status === "redirect") && result.url) return result.url;
+  if (result.status === "tunnel" && result.url) {
+    const normalized = normalizeCobaltTunnelUrl(result.url, config.COBALT_API_URL);
+    if (normalized !== result.url) log("cobalt_tunnel_origin_rewritten", {
+      returned_origin: new URL(result.url).origin, configured_origin: new URL(config.COBALT_API_URL).origin });
+    return normalized;
+  }
+  if (result.status === "redirect" && result.url) return result.url;
   if (result.status === "picker") {
     if (!preferVideo && result.audio) return result.audio;
     return result.picker?.find((item) => item.type === "video")?.url;

@@ -8,6 +8,7 @@
 - O navegador ainda materializava toda a resposta em `Blob` e depois em `File` antes do upload. A Edge Function baixava o objeto inteiro do Storage, convertia para `arrayBuffer`/`Uint8Array` e depois base64, multiplicando o pico de memória e causando falhas de compute em arquivos maiores.
 - YouTube não usava o caminho Cobalt do frontend, limitado por condição a Instagram/TikTok. A Edge Function tentava apenas HTML/descrição e não possuía fallback robusto para mídia, por isso vídeos sem texto suficiente deixaram de funcionar.
 - A Netlify Function estava correta como proxy JSON, mas não eliminava o segundo salto browser → túnel Cobalt. URLs temporárias não podem ser persistidas para consumo posterior.
+- O teste em produção revelou ainda que o Cobalt gerava túneis com a origem antiga `imputcobalt-api-production-d1ca.up.railway.app`, que respondia 404, embora a API configurada fosse `kooki.up.railway.app`. O worker corrige somente a origem de respostas `tunnel` para `COBALT_API_URL`; URLs `redirect` externas são preservadas.
 - Correção escolhida: frontend chama somente a Edge Function para enfileirar; um worker Node/ffmpeg independente consome Cobalt e Storage por streaming, segmenta áudio e persiste progresso. A Edge deixa de baixar ou transcrever mídia.
 
 - React/Vite/TypeScript mobile-first, PWA, Supabase Auth/Postgres/Storage/Edge Functions e OpenRouter.
