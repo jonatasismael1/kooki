@@ -35,10 +35,13 @@ function mediaUrl(result: Cobalt, preferVideo = false) {
   }
   return undefined;
 }
-export async function acquireLink(url: string) {
-  const audio = await cobalt(url, { downloadMode: "audio", audioFormat: "mp3", audioBitrate: "64" });
-  const direct = mediaUrl(audio);
-  if (direct) return { url: direct, attempt: "audio" };
+export async function acquireLink(url: string, videoOnly = false) {
+  let audio: Cobalt = {};
+  if (!videoOnly) {
+    audio = await cobalt(url, { downloadMode: "audio", audioFormat: "mp3", audioBitrate: "64" });
+    const direct = mediaUrl(audio);
+    if (direct) return { url: direct, attempt: "audio" };
+  }
   const video = await cobalt(url, { downloadMode: "auto", videoQuality: "720" });
   const fallback = mediaUrl(video, true);
   if (fallback) return { url: fallback, attempt: "video" };

@@ -49,7 +49,18 @@ async function processJob(job: Job) {
         else { const media = await acquireLink(job.normalized_url ?? job.source_url ?? ""); acquisition = media.attempt;
           response = await fetchMedia(media.url); }
         await updateJob(job.id, { status: "extracting", progress: 25, current_stage: "Preparando o áudio", media_metadata: { acquisition } });
-        const { files, probe } = await segmentStream(job.id, response, directory);
+        let segmented;
+        try { segmented = await segmentStream(job.id, response, directory); }
+        catch (audioError) {
+          if (job.audio_path || acquisition !== "audio") throw audioError;
+          log("audio_stream_failed", { job_id: job.id, reason: audioError instanceof Error ? audioError.message : "unknown" });
+          await clean(directory); await checkDisk(directory);
+          await updateJob(job.id, { status: "extracting", progress: 20, current_stage: "Buscando o vídeo como alternativa" });
+          const video = await acquireLink(job.normalized_url ?? job.source_url ?? "", true);
+          acquisition = "video";
+          segmented = await segmentStream(job.id, await fetchMedia(video.url), directory);
+        }
+        const { files, probe } = segmented;
         await updateJob(job.id, { status: "transcribing", progress: 45, current_stage: "Transcrevendo o conteúdo",
           media_metadata: { acquisition, probe, segment_count: files.length } });
         const transcript = await transcribe(job.id, directory, files); text = [text, transcript].filter(Boolean).join("\n\n");
