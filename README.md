@@ -55,6 +55,8 @@ npm run build
 
 O artefato `dist/` pode ser publicado em Vercel, Netlify ou Cloudflare Pages com fallback SPA para `index.html`. Configure as variáveis públicas no painel do host.
 
+O processamento de mídia é assíncrono e executado pelo serviço portátil `kooki-media-worker`; consulte [docs/MEDIA_WORKER.md](docs/MEDIA_WORKER.md). A Edge Function apenas autentica e enfileira, respondendo HTTP 202.
+
 Na Netlify, `netlify.toml` define build, redirects SPA e a Function `/api/import-social`. Execute `npx netlify deploy --build --prod` após vincular o site.
 
 ## Estrutura funcional

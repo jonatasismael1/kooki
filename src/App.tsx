@@ -42,15 +42,6 @@ import { CookModePage } from "./pages/CookModePage";
 import { SharedRecipePage } from "./pages/SharedRecipePage";
 import { readableQuantity, scaleQuantity } from "./lib/product";
 import { normalizeUrl } from "./lib/import";
-import {
-  cobaltErrorMessage,
-  estimateAudioDurationSeconds,
-  inferMediaType,
-  isTranscribableMedia,
-  resourceFallbackMessage,
-  selectCobaltMedia,
-  type CobaltResponse,
-} from "./lib/cobalt";
 import "./index.css";
 
 type Recipe = {
@@ -66,9 +57,6 @@ type Recipe = {
   recipe_ingredients?: Ingredient[];
   recipe_steps?: Step[];
 };
-const maxSocialMediaBytes = 100 * 1024 * 1024;
-const maxSocialAudioBytes = 32 * 1024 * 1024;
-const maxSocialAudioDurationSeconds = 60 * 60;
 type Ingredient = IngredientInput & {
   id: string;
   quantity_text: string | null;
@@ -607,30 +595,61 @@ function RecipeEditor() {
   const [media, setMedia] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [currentStage, setCurrentStage] = useState("");
   useEffect(() => {
     if (error) notify("error", "Não foi possível importar", error);
   }, [error]);
   async function upload(file: File) {
     if (!supabase) throw new Error("Supabase indisponível");
-    if (file.size > maxSocialMediaBytes)
-      throw new Error("O arquivo deve ter no máximo 100 MB.");
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) throw new Error("Sessão inválida. Entre novamente.");
     const path = `${user.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "-")}`;
+    const { data: signed, error: signError } = await supabase.storage
+      .from("recipe-audio")
+      .createSignedUploadUrl(path);
+    if (signError) throw signError;
     const { error: uploadError } = await supabase.storage
       .from("recipe-audio")
-      .upload(path, file, {
-        contentType: file.type || "video/mp4",
-        upsert: false,
+      .uploadToSignedUrl(path, signed.token, file, {
+        contentType: file.type || "application/octet-stream",
       });
     if (uploadError) throw uploadError;
     return path;
   }
+  async function waitForJob(jobId: string) {
+    if (!supabase) throw new Error("Supabase indisponível");
+    return new Promise<{ recipe_id?: string; status: string; error_message?: string }>((resolve, reject) => {
+      let settled = false;
+      const finish = (value: { recipe_id?: string; status: string; error_message?: string }) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(poll);
+        void supabase.removeChannel(channel);
+        resolve(value);
+      };
+      const inspect = (job: { recipe_id?: string; status: string; current_stage?: string; error_message?: string }) => {
+        if (job.current_stage) setCurrentStage(job.current_stage);
+        if (["completed", "needs_review", "needs_manual_input", "failed", "cancelled"].includes(job.status)) finish(job);
+      };
+      const channel = supabase.channel(`import-job-${jobId}`).on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "recipe_import_jobs", filter: `id=eq.${jobId}`,
+      }, (payload) => inspect(payload.new as { recipe_id?: string; status: string; current_stage?: string; error_message?: string })).subscribe();
+      const check = async () => {
+        const { data, error: pollError } = await supabase.from("recipe_import_jobs")
+          .select("recipe_id,status,current_stage,error_message").eq("id", jobId).single();
+        if (pollError) { if (!settled) reject(new Error("Não foi possível acompanhar a importação.")); return; }
+        inspect(data);
+      };
+      const poll = window.setInterval(() => void check(), 3000);
+      void check();
+    });
+  }
   async function save() {
     setBusy(true);
     setError("");
+    setCurrentStage("Analisando o conteúdo");
     if (!supabase) {
       if (mode === "audio") {
         setError("Áudio e vídeo requerem o backend Supabase.");
@@ -669,8 +688,6 @@ function RecipeEditor() {
       }
     } else {
       let audioPath: string | undefined;
-      let mediaSource: "cobalt_audio" | undefined;
-      let mediaDurationSeconds: number | undefined;
       let replaceRecipeId: string | undefined;
       let idempotencyKey: string | undefined;
       try {
@@ -703,90 +720,6 @@ function RecipeEditor() {
               throw new Error("Escolha abrir, copiar ou atualizar.");
             idempotencyKey = crypto.randomUUID();
           }
-          const host = new URL(content).hostname;
-          if (host.includes("instagram.com") || host.includes("tiktok.com")) {
-            const {
-              data: { session },
-            } = await supabase.auth.getSession();
-            if (!session) throw new Error("Sessão expirada. Entre novamente.");
-            const response = await fetch("/api/import-social", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                url: content,
-              }),
-            });
-            const cobalt = (await response.json()) as CobaltResponse;
-            console.info("[Kooki import]", {
-              stage: "cobalt_response",
-              httpStatus: response.status,
-              status: cobalt.status,
-              filename: cobalt.filename,
-              pickerCount: cobalt.picker?.length ?? 0,
-              errorCode: cobalt.error?.code,
-            });
-            if (!response.ok)
-              throw new Error(cobaltErrorMessage(cobalt.error?.code));
-            const extracted = selectCobaltMedia(cobalt);
-            const mediaResponse = await fetch(extracted.url, {
-              redirect: "follow",
-            });
-            if (!mediaResponse.ok)
-              throw new Error(
-                `Não foi possível baixar a mídia (${mediaResponse.status}).`,
-              );
-            const declaredSize = Number(
-              mediaResponse.headers.get("content-length") ?? 0,
-            );
-            if (declaredSize > maxSocialAudioBytes)
-              throw new Error(
-                "O áudio excede o limite de transcrição. Use a legenda, cole o texto manualmente ou tente novamente.",
-              );
-            const mediaBlob = await mediaResponse.blob();
-            if (mediaBlob.size > maxSocialAudioBytes)
-              throw new Error(
-                "O áudio excede o limite de transcrição. Use a legenda, cole o texto manualmente ou tente novamente.",
-              );
-            const estimatedDuration = estimateAudioDurationSeconds(
-              mediaBlob.size,
-              64,
-            );
-            mediaDurationSeconds = estimatedDuration ?? undefined;
-            console.info("[Kooki import]", {
-              stage: "audio_downloaded",
-              sizeBytes: mediaBlob.size,
-              durationSeconds: estimatedDuration,
-              durationEstimated: true,
-              contentType: mediaBlob.type,
-            });
-            if (
-              estimatedDuration &&
-              estimatedDuration > maxSocialAudioDurationSeconds
-            )
-              throw new Error(
-                "O áudio tem mais de 60 minutos. Use a legenda, cole o texto manualmente ou tente novamente.",
-              );
-            const contentType = inferMediaType(
-              mediaBlob.type ||
-                mediaResponse.headers.get("content-type") ||
-                "application/octet-stream",
-              extracted.filename,
-            );
-            if (!isTranscribableMedia(contentType, extracted.filename))
-              throw new Error(
-                "O Cobalt retornou uma imagem, não um vídeo ou áudio transcrevível.",
-              );
-            const filename =
-              extracted.filename.replace(/[^\w.-]+/g, "-") ||
-              "social-video.mp4";
-            audioPath = await upload(
-              new File([mediaBlob], filename, { type: contentType }),
-            );
-            mediaSource = "cobalt_audio";
-          }
         }
       } catch (extractionError) {
         const message =
@@ -797,7 +730,7 @@ function RecipeEditor() {
           stage: "download_or_upload_failed",
           message,
         });
-        setError(resourceFallbackMessage(message));
+        setError(message === "Failed to fetch" ? "Não foi possível enviar o arquivo. Verifique sua conexão e tente novamente." : message);
         setBusy(false);
         return;
       }
@@ -808,9 +741,7 @@ function RecipeEditor() {
             inputType: mode === "url" ? "url" : mode,
             sourceUrl: mode === "url" ? content : null,
             rawText: mode === "text" ? content : null,
-            audioPath,
-            mediaSource,
-            mediaDurationSeconds,
+            storagePath: audioPath,
             replaceRecipeId,
             idempotencyKey,
           },
@@ -821,11 +752,8 @@ function RecipeEditor() {
         const context = (e as unknown as { context?: Response }).context;
         if (context)
           try {
-            const details = (await context.json()) as {
-              error?: string;
-              message?: string;
-            };
-            message = details.error ?? details.message ?? message;
+            const details = (await context.json()) as { error?: { message?: string } };
+            message = details.error?.message ?? message;
           } catch {
             message = e.message;
           }
@@ -833,38 +761,38 @@ function RecipeEditor() {
           stage: "transcription_or_structure_failed",
           message,
         });
-        setError(resourceFallbackMessage(message));
+        setError(message === "Failed to fetch" ? "Não foi possível iniciar a importação. Verifique sua conexão e tente novamente." : message);
       } else {
         const result = data as {
-          recipeId?: string;
+          success?: boolean;
+          job_id?: string;
           status?: string;
-          message?: string;
         };
-        if (result.recipeId) {
+        if (!result.success || !result.job_id) setError("A importação não pôde ser iniciada.");
+        else {
+          const job = await waitForJob(result.job_id);
+          if (job.recipe_id) {
           notify(
             "success",
-            result.status === "needs_review"
+            job.status === "needs_review"
               ? "Receita criada para revisão"
               : "Receita importada com sucesso",
           );
-          nav(`/receitas/${result.recipeId}`);
-        } else
-          setError(
-            result.message ??
-              (result.status === "needs_manual_input"
-                ? "A plataforma bloqueou a leitura. Envie o vídeo/áudio ou cole a legenda."
-                : "A importação não gerou uma receita."),
-          );
+            nav(`/receitas/${job.recipe_id}`);
+          } else setError(job.error_message ?? (job.status === "needs_manual_input"
+            ? "Não conseguimos obter conteúdo suficiente. Use a legenda ou envie o arquivo."
+            : "A importação não pôde ser concluída. Tente novamente ou use texto manual."));
+        }
       }
     }
     setBusy(false);
   }
   const loadingTitle =
     mode === "url"
-      ? "Baixando e analisando o vídeo…"
+      ? currentStage || "Analisando o link…"
       : mode === "audio"
-        ? "Enviando e transcrevendo…"
-        : "Organizando sua receita…";
+        ? currentStage || "Enviando o arquivo…"
+        : currentStage || "Organizando sua receita…";
   return (
     <>
       <Header title="Adicionar receita" />

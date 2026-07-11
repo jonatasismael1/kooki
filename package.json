@@ -3,12 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": ["media-worker"],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "lint": "oxlint src vite.config.ts",
+    "lint": "oxlint src media-worker/src vite.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

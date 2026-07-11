@@ -1,0 +1,13 @@
+services:
+  kooki-media-worker:
+    build:
+      context: .
+      dockerfile: media-worker/Dockerfile
+    env_file:
+      - ./media-worker/.env
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    tmpfs:
+      - /tmp/kooki-media:size=2g,mode=1777
+    stop_grace_period: 10m
