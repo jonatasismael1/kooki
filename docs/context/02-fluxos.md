@@ -5,7 +5,8 @@
 3. Link/texto cria job idempotente, valida limite, extrai, chama IA, valida e salva.
 4. Baixa confiança abre como `needs_review`; conteúdo insuficiente pede entrada manual.
 5. Receitas alimentam Modo Cozinha e consolidação conservadora da lista de compras.
-6. Para Instagram/TikTok, a Netlify Function solicita ao Cobalt áudio MP3 a 64 kbps e devolve seu JSON, sem baixar mídia e sem consumir memória com `blob`, `arrayBuffer` ou base64.
-7. O navegador seleciona áudio em respostas `redirect`, `tunnel` ou `picker`, baixa diretamente, valida até 32 MB e 60 minutos estimados e envia ao bucket privado do usuário.
-8. A Edge Function rejeita mídia social que não seja áudio, registra tamanho/duração/etapa, transcreve, estrutura a receita e remove o arquivo temporário mesmo quando falha.
-9. Falha de recursos, limite ou extração oferece legenda, texto manual ou nova tentativa; upload manual de até 100 MB continua disponível.
+6. O frontend chama somente a Edge Function de início; ela autentica, cria o job e responde 202, sem chamar Cobalt, baixar ou transcrever mídia.
+7. Uploads seguem diretamente para o bucket privado por URL assinada. O worker lê o Storage; arquivos não atravessam a Edge Function.
+8. Para links sociais/YouTube, o worker pede áudio MP3 a 64 kbps ao Cobalt e cai para vídeo 720p; `tunnel`, `redirect`, `picker` e erros têm tratamento explícito.
+9. O worker transmite a mídia ao ffmpeg, normaliza para mono/16 kHz/64 kbps, divide em segmentos de 10 minutos e persiste cada transcrição para retomada.
+10. O frontend acompanha por Realtime com polling; falhas oferecem legenda, texto manual, upload ou nova tentativa.
