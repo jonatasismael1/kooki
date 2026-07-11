@@ -279,9 +279,9 @@ export default defineConfig(({ mode }) => {
           lang: "pt-BR",
           icons: [
             {
-              src: "/favicon.svg",
-              sizes: "any",
-              type: "image/svg+xml",
+              src: "/kooki-logo.png",
+              sizes: "192x192 512x512",
+              type: "image/png",
               purpose: "any maskable",
             },
           ],

@@ -880,7 +880,14 @@ progress::-moz-progress-bar {
   justify-content: space-between;
   gap: 12px;
   box-shadow: var(--shadow-sm);
+  word-break: break-word;
 }
+
+.manage-list article > div:first-child:not(.manage-icon) {
+  min-width: 0;
+  flex-grow: 1;
+}
+
 
 .manage-icon {
   width: 40px;
@@ -892,6 +899,44 @@ progress::-moz-progress-bar {
   justify-content: center;
   color: var(--primary);
   flex-shrink: 0;
+}
+
+/* ===================================================
+   CHIP LIST (TAGS & CATEGORIES)
+   =================================================== */
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.chip-list button {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px; /* Fully rounded for chips */
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.chip-list button:hover {
+  border-color: var(--primary);
+  color: var(--text-primary);
+  background-color: var(--surface-muted);
+}
+
+.chip-list button.active {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
 }
 
 /* ===================================================
@@ -1001,9 +1046,12 @@ progress::-moz-progress-bar {
 .toast-viewport {
   position: fixed;
   z-index: 100;
-  right: 24px;
-  bottom: 24px;
-  width: min(390px, calc(100vw - 48px));
+  /* Centers on mobile */
+  left: 50%;
+  transform: translateX(-50%);
+  /* Mobile-first: offset by bottom bar height */
+  bottom: calc(var(--bottom-bar-height) + env(safe-area-inset-bottom) + 16px);
+  width: min(390px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1021,6 +1069,7 @@ progress::-moz-progress-bar {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  word-break: break-word; /* Prevent text cut-off */
 }
 
 .toast.success {
@@ -1186,6 +1235,14 @@ progress::-moz-progress-bar {
 
   .detail-grid section {
     padding: 32px;
+  }
+
+  /* Desktop Toast positioning (bottom right) */
+  .toast-viewport {
+    left: auto;
+    transform: none;
+    right: 24px;
+    bottom: 24px;
   }
 
   h1 {
