@@ -843,9 +843,16 @@ progress::-moz-progress-bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1; /* Fixes horizontal overflow by allowing flex shrink */
+  min-width: 0;
   cursor: pointer;
-  flex-direction: row; /* Always horizontal */
+  flex-direction: row;
+}
+
+.check-list label > span, .shopping-list label > span {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word; /* Allows long names to wrap */
 }
 
 .check-list input[type=checkbox]:checked + span,
@@ -944,6 +951,7 @@ progress::-moz-progress-bar {
    =================================================== */
 .tool-actions {
   display: flex;
+  flex-wrap: wrap; /* Fixes horizontal overflow by allowing tools to wrap */
   gap: 8px;
   align-items: center;
   flex-shrink: 0;

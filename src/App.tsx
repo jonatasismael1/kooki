@@ -1561,7 +1561,7 @@ function RecipeDetail() {
         </section>
       </div>
 
-      <div className="flex gap-4 mt-6">
+      <div className="flex flex-col sm:flex-row gap-4 mt-6">
         <button
           className="button flex-grow"
           onClick={() => navigate(`/receitas/${recipe.id}/cozinha`)}
@@ -2012,7 +2012,7 @@ function Shopping() {
               </div>
 
               {/* Bottom Sticky Action Panel */}
-              <div className="flex gap-4 mt-4">
+              <div className="flex flex-col sm:flex-row gap-4 mt-4">
                 <button className="button secondary flex-grow" onClick={() => setAddManualDrawer(true)}>
                   <PlusCircle className="w-4 h-4" /> Adicionar item manual
                 </button>
