@@ -6,9 +6,11 @@ export type Toast={
   description?:string;
   actionLabel?:string;
   onAction?:()=>void;
+  onClick?:()=>void;
+  redirectTo?:string;
 }
 export const toastEventName='kooki:toast'
-export function notify(kind:ToastKind,title:string,description?:string,actionLabel?:string,onAction?:()=>void){
-  window.dispatchEvent(new CustomEvent<Toast>(toastEventName,{detail:{id:crypto.randomUUID(),kind,title,description,actionLabel,onAction}}))
+export function notify(kind:ToastKind,title:string,description?:string,actionLabel?:string,onAction?:()=>void,onClick?:()=>void,redirectTo?:string){
+  window.dispatchEvent(new CustomEvent<Toast>(toastEventName,{detail:{id:crypto.randomUUID(),kind,title,description,actionLabel,onAction,onClick,redirectTo}}))
 }
 

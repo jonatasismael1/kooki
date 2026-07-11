@@ -194,7 +194,15 @@ function App() {
           if (["completed", "failed", "cancelled", "needs_review", "needs_manual_input"].includes(job.status)) {
             setActiveJobs(prev => prev.filter(j => j.id !== job.id));
             if (job.status === "completed") {
-              notify("success", "Receita importada com sucesso!", "Ela já está no seu acervo.");
+              notify(
+                "success",
+                "Receita importada com sucesso!",
+                "Toque aqui para abrir a receita.",
+                undefined,
+                undefined,
+                undefined,
+                `/receitas/${job.recipe_id}`
+              );
             } else if (job.status === "needs_review") {
               notify("info", "Receita requer revisão", "Vá até Organizar para revisar.");
             } else if (job.status === "failed") {
@@ -292,9 +300,9 @@ function App() {
             }
           />
         </Routes>
+        <ToastViewport />
       </BrowserRouter>
       <PwaUpdateBanner />
-      <ToastViewport />
     </AppContext.Provider>
   );
 }
