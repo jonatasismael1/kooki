@@ -1,5 +1,5 @@
 /* oxlint-disable eslint-plugin-react-refresh/only-export-components */
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { Suspense, createContext, lazy, useContext, useEffect, useMemo, useState } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -42,7 +42,6 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import { consolidateIngredients, type IngredientInput } from "./lib/shopping";
 import {
-  deleteLocalRecipe,
   getLocalRecipe,
   getLocalRecipes,
   saveLocalRecipe,
@@ -50,16 +49,32 @@ import {
 import { LoadingOverlay, ToastViewport } from "./components/feedback";
 import { notify } from "./components/feedback-events";
 import { RecipeTools } from "./components/recipe-tools";
-import { OrganizerPage } from "./pages/OrganizerPage";
-import { PlanningPage } from "./pages/PlanningPage";
-import { CookModePage } from "./pages/CookModePage";
-import { SharedRecipePage } from "./pages/SharedRecipePage";
 import { readableQuantity, scaleQuantity } from "./lib/product";
 import { ConfirmDialog, BottomSheet, LoadingButton, PromptDialog } from "./components/ui";
-import { PantrySuggestions } from "./components/pantry-suggestions";
 import { PwaUpdateBanner } from "./components/pwa-update-banner";
+import {
+  archiveRecipe,
+  resumePendingRecipeDeletions,
+  scheduleArchivedRecipeDeletion,
+  undoArchiveRecipe,
+} from "./lib/recipe-revisions";
 import "./index.css";
 
+const OrganizerPage = lazy(() =>
+  import("./pages/OrganizerPage").then((module) => ({ default: module.OrganizerPage })),
+);
+const PlanningPage = lazy(() =>
+  import("./pages/PlanningPage").then((module) => ({ default: module.PlanningPage })),
+);
+const CookModePage = lazy(() =>
+  import("./pages/CookModePage").then((module) => ({ default: module.CookModePage })),
+);
+const SharedRecipePage = lazy(() => import("./pages/SharedRecipePage"));
+const RecipeEditPage = lazy(() => import("./pages/RecipeEditPage"));
+const RecipeVersionHistory = lazy(() => import("./components/recipe-version-history"));
+const PantrySuggestions = lazy(() =>
+  import("./components/pantry-suggestions").then((module) => ({ default: module.PantrySuggestions })),
+);
 
 
 type Recipe = {
@@ -284,7 +299,10 @@ function App() {
     <AppContext.Provider value={{ session, activeJobs, startImport, activeList, setActiveList, fetchActiveList, theme, setTheme }}>
       <BrowserRouter>
         <Routes>
-          <Route path="/compartilhada/:token" element={<SharedRecipePage />} />
+          <Route
+            path="/compartilhada/:token"
+            element={<Suspense fallback={<State title="Carregando receita…" />}><SharedRecipePage /></Suspense>}
+          />
           <Route
             path="/login"
             element={session ? <Navigate to="/" /> : <Login />}
@@ -454,6 +472,10 @@ function Shell({ session }: { session: Session | null }) {
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    void resumePendingRecipeDeletions().catch(() => undefined);
+  }, []);
+
   async function logout() {
     setLogoutConfirm(false);
     await supabase?.auth.signOut();
@@ -478,18 +500,21 @@ function Shell({ session }: { session: Session | null }) {
 
       {/* Main Content Area */}
       <main className="content">
-        <Routes>
-          <Route index element={<Dashboard />} />
-          <Route path="receitas" element={<Recipes />} />
-          <Route path="receitas/nova" element={<RecipeEditor />} />
-          <Route path="receitas/:id" element={<RecipeDetail />} />
-          <Route path="receitas/:id/cozinha" element={<CookModePage />} />
-          <Route path="organizar" element={<OrganizerPage />} />
-          <Route path="planejamento" element={<PlanningPage />} />
-          <Route path="compras" element={<Shopping />} />
-          <Route path="perfil" element={<Profile session={session} />} />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
+        <Suspense fallback={<State title="Carregando página…" />}>
+          <Routes>
+            <Route index element={<Dashboard />} />
+            <Route path="receitas" element={<Recipes />} />
+            <Route path="receitas/nova" element={<RecipeEditor />} />
+            <Route path="receitas/:id" element={<RecipeDetail />} />
+            <Route path="receitas/:id/editar" element={<RecipeEditPage />} />
+            <Route path="receitas/:id/cozinha" element={<CookModePage />} />
+            <Route path="organizar" element={<OrganizerPage />} />
+            <Route path="planejamento" element={<PlanningPage />} />
+            <Route path="compras" element={<Shopping />} />
+            <Route path="perfil" element={<Profile session={session} />} />
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
+        </Suspense>
       </main>
 
       {/* Mobile Bottom Bar */}
@@ -938,7 +963,7 @@ function Recipes() {
 
   useEffect(() => {
     if (!supabase) {
-      setItems(getLocalRecipes());
+      setItems(getLocalRecipes().filter((recipe) => recipe.status !== "archived"));
       setLoading(false);
       return;
     }
@@ -1435,17 +1460,40 @@ function RecipeDetail() {
 
   async function remove() {
     setDeleteConfirm(false);
-    if (supabase) {
-      const { error } = await supabase.from("recipes").delete().eq("id", recipe.id);
-      if (error) {
-        notify("error", "Não foi possível excluir", error.message);
-        return;
-      }
-    } else {
-      deleteLocalRecipe(recipe.id);
+    try {
+      const previousStatus = recipe.status;
+      await archiveRecipe(recipe.id);
+      const cancelPermanentDeletion = scheduleArchivedRecipeDeletion(recipe.id);
+      notify(
+        "success",
+        "Receita excluída",
+        "Você pode desfazer esta ação por alguns segundos.",
+        "Desfazer",
+        () => {
+          cancelPermanentDeletion();
+          void undoArchiveRecipe(recipe.id, previousStatus)
+            .then(() => notify("success", "Exclusão desfeita"))
+            .catch((undoError) =>
+              notify(
+                "error",
+                "Não foi possível desfazer",
+                undoError instanceof Error ? undoError.message : "Tente novamente.",
+              ),
+            );
+        },
+      );
+      navigate("/receitas");
+    } catch (removeError) {
+      notify(
+        "error",
+        "Não foi possível excluir",
+        removeError instanceof Error ? removeError.message : "Tente novamente.",
+      );
     }
-    notify("success", "Receita excluída");
-    navigate("/receitas");
+  }
+
+  function startEditing() {
+    navigate(`/receitas/${recipe.id}/editar`);
   }
 
   return (
@@ -1453,20 +1501,30 @@ function RecipeDetail() {
       <Header
         title={recipe.title}
         action={
-          <button
-            className="icon-button danger"
-            aria-label="Excluir receita"
-            onClick={() => setDeleteConfirm(true)}
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="icon-button"
+              aria-label="Editar receita"
+              onClick={startEditing}
+            >
+              <Edit3Icon className="w-5 h-5" />
+            </button>
+            <button
+              className="icon-button danger"
+              aria-label="Excluir receita"
+              onClick={() => setDeleteConfirm(true)}
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
         }
       />
 
       {recipe.status === "needs_review" && (
-        <div className="notice mb-4">
+        <div className="notice mb-4 review-notice">
           <AlertTriangle className="w-5 h-5" />
-          Algumas informações parecem incompletas. Por favor, revise as etapas.
+          <span>Algumas informações parecem incompletas. Os campos que precisam de atenção serão destacados no editor.</span>
+          <button className="button secondary" onClick={startEditing}>Revisar agora</button>
         </div>
       )}
 
@@ -1523,7 +1581,7 @@ function RecipeDetail() {
           <h2>Ingredientes</h2>
           {recipe.recipe_ingredients?.length ? (
             <ul className="check-list">
-              {recipe.recipe_ingredients
+              {[...recipe.recipe_ingredients]
                 .sort((a, b) => a.position - b.position)
                 .map((ingredient) => {
                   const adjusted = scaleQuantity(
@@ -1555,7 +1613,7 @@ function RecipeDetail() {
           <h2>Modo de preparo</h2>
           {recipe.recipe_steps?.length ? (
             <ol className="flex flex-col gap-4 list-decimal pl-4">
-              {recipe.recipe_steps
+              {[...recipe.recipe_steps]
                 .sort((a, b) => a.position - b.position)
                 .map((step) => (
                   <li key={step.id} className="pl-2 text-text-primary leading-relaxed text-sm">
@@ -1586,11 +1644,15 @@ function RecipeDetail() {
           setRecipe((current) => (current ? { ...current, is_favorite: value } : current))
         }
       />
+      <RecipeVersionHistory recipe={recipe} onRestored={(restored) => {
+        setRecipe(restored);
+        setTargetServings(restored.servings);
+      }} />
 
       <ConfirmDialog
         isOpen={deleteConfirm}
         title="Excluir Receita"
-        description="Tem certeza que deseja excluir esta receita definitivamente do seu acervo?"
+        description="A receita será removida do acervo. Logo após a exclusão, você poderá desfazer a ação por alguns segundos."
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
         isDestructive={true}

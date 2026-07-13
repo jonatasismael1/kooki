@@ -40,6 +40,7 @@ export function Dialog({ isOpen, onClose, title, children }: DialogProps) {
             <RadixDialog.Close asChild>
               <button className="text-text-secondary hover:text-text-primary p-1 rounded-lg hover:bg-surface-muted">
                 <X className="w-5 h-5" />
+                <span className="sr-only">Fechar</span>
               </button>
             </RadixDialog.Close>
           </div>
@@ -106,7 +107,7 @@ export function ConfirmDialog({
     <Dialog isOpen={isOpen} onClose={onCancel} title={title}>
       <div className="flex flex-col gap-4">
         <p className="text-sm text-text-secondary">{description}</p>
-        <div className="flex justify-end gap-3 mt-2">
+        <div className="dialog-actions flex justify-end gap-3 mt-2">
           <button className="button secondary" onClick={onCancel}>
             {cancelLabel}
           </button>
