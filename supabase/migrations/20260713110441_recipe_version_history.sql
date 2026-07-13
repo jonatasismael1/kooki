@@ -1,4 +1,4 @@
-create table public.recipe_versions (
+create table if not exists public.recipe_versions (
   id uuid primary key default gen_random_uuid(),
   recipe_id uuid not null references public.recipes(id) on delete cascade,
   user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
@@ -8,13 +8,13 @@ create table public.recipe_versions (
   created_at timestamptz not null default now()
 );
 
-create index recipe_versions_recipe_created_idx
+create index if not exists recipe_versions_recipe_created_idx
   on public.recipe_versions (recipe_id, created_at desc);
 
-create index recipe_versions_user_idx
+create index if not exists recipe_versions_user_idx
   on public.recipe_versions (user_id);
 
-create unique index recipe_versions_original_ai_idx
+create unique index if not exists recipe_versions_original_ai_idx
   on public.recipe_versions (recipe_id)
   where kind = 'original_ai';
 
@@ -23,11 +23,15 @@ alter table public.recipe_versions enable row level security;
 revoke all on table public.recipe_versions from anon;
 grant select, insert on table public.recipe_versions to authenticated;
 
+drop policy if exists recipe_versions_own_select on public.recipe_versions;
+
 create policy recipe_versions_own_select
   on public.recipe_versions
   for select
   to authenticated
   using ((select auth.uid()) = user_id);
+
+drop policy if exists recipe_versions_own_insert on public.recipe_versions;
 
 create policy recipe_versions_own_insert
   on public.recipe_versions

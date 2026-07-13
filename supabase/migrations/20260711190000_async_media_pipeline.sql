@@ -29,6 +29,9 @@ create table if not exists public.recipe_import_segments (
 );
 
 alter table public.recipe_import_segments enable row level security;
+
+drop policy if exists segments_own_select on public.recipe_import_segments;
+
 create policy segments_own_select on public.recipe_import_segments
   for select to authenticated
   using (exists (
@@ -79,7 +82,19 @@ revoke all on function public.claim_recipe_import_job(text, integer) from public
 grant execute on function public.claim_recipe_import_job(text, integer) to service_role;
 grant all on public.recipe_import_segments to service_role;
 
-alter publication supabase_realtime add table public.recipe_import_segments;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'recipe_import_segments'
+  ) then
+    alter publication supabase_realtime add table public.recipe_import_segments;
+  end if;
+end;
+$$;
 
 update storage.buckets
 set file_size_limit = null,
