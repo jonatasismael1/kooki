@@ -1112,6 +1112,120 @@ progress::-moz-progress-bar {
   flex-grow: 1;
 }
 
+.manage-copy {
+  min-width: 0;
+}
+
+.manage-copy strong,
+.manage-copy span,
+.import-error-text {
+  overflow-wrap: anywhere;
+}
+
+.import-row {
+  align-items: flex-start;
+}
+
+.import-row > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.import-row-actions {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.import-error-text {
+  line-height: 1.35;
+  max-width: 100%;
+}
+
+.import-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.import-issues-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.import-issues-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background-color: #fff2d7;
+  color: #8a5a12;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.import-issues-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-issues-list article {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--surface-muted);
+  padding: 10px 12px;
+}
+
+.import-issues-list article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.import-issues-list strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.import-issues-list span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.import-issues-list p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.dark .import-issues-icon {
+  background-color: #3b2c15;
+  color: #ffe6bd;
+}
+
+@media (max-width: 640px) {
+  .import-row {
+    flex-direction: column;
+  }
+
+  .import-row-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .import-row-actions .button {
+    flex: 1;
+  }
+}
+
 
 .manage-icon {
   width: 40px;

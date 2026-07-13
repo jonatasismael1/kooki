@@ -12,10 +12,19 @@ import {
   Tags,
   Trash2,
 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { notify } from "../components/feedback-events";
 import { PantrySuggestions } from "../components/pantry-suggestions";
 import { ConfirmDialog, Dialog } from "../components/ui";
+import {
+  importErrorMessage,
+  importStatusFilterOptions,
+  importStatusLabel,
+  pantryStatusFilterOptions,
+  pantryStatusLabel,
+  platformLabel,
+} from "../lib/import-status";
 
 type Tab = "categories" | "tags" | "collections" | "pantry" | "imports";
 
@@ -49,7 +58,11 @@ const labels: Record<Tab, string> = {
 };
 
 export function OrganizerPage() {
-  const [tab, setTab] = useState<Tab>("categories");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState<Tab>(
+    initialTab && initialTab in labels ? (initialTab as Tab) : "categories",
+  );
   const [rows, setRows] = useState<Row[]>([]);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -98,6 +111,13 @@ export function OrganizerPage() {
   useEffect(() => {
     void load();
   }, [tab]);
+
+  function selectTab(nextTab: Tab) {
+    setTab(nextTab);
+    setStatusFilter("");
+    setQueryText("");
+    setSearchParams(nextTab === "categories" ? {} : { tab: nextTab });
+  }
 
   async function create() {
     if (!supabase || !name.trim()) return;
@@ -271,7 +291,7 @@ export function OrganizerPage() {
         {(Object.keys(labels) as Tab[]).map((key) => (
           <button
             className={tab === key ? "active" : ""}
-            onClick={() => setTab(key)}
+            onClick={() => selectTab(key)}
             key={key}
           >
             {labels[key]}
@@ -351,20 +371,10 @@ export function OrganizerPage() {
             className="md:w-[200px]"
           >
             <option value="">Todos os estados</option>
-            {(tab === "pantry"
-              ? ["available", "low", "out", "expired"]
-              : [
-                  "extracting",
-                  "transcribing",
-                  "structuring",
-                  "completed",
-                  "needs_review",
-                  "needs_manual_input",
-                  "failed",
-                  "cancelled",
-                ]
-            ).map((status) => (
-              <option key={status}>{status}</option>
+            {(tab === "pantry" ? pantryStatusFilterOptions : importStatusFilterOptions).map((status) => (
+              <option key={status} value={status}>
+                {tab === "pantry" ? pantryStatusLabel(status) : importStatusLabel(status)}
+              </option>
             ))}
           </select>
         </section>
@@ -387,7 +397,7 @@ export function OrganizerPage() {
       ) : (
         <div className="manage-list flex flex-col gap-3">
           {visibleRows.map((row) => (
-            <article key={row.id} className="p-4 bg-surface border border-border rounded-xl flex items-center justify-between shadow-sm">
+            <article key={row.id} className={`p-4 bg-surface border border-border rounded-xl flex items-center justify-between shadow-sm ${tab === "imports" ? "import-row" : ""}`}>
               <div className="flex items-center gap-3">
                 <div className="manage-icon w-10 h-10 rounded-lg bg-surface-muted flex items-center justify-center text-primary">
                   {tab === "collections" ? (
@@ -402,27 +412,29 @@ export function OrganizerPage() {
                     <Archive className="w-5 h-5" />
                   )}
                 </div>
-                <div>
+                <div className="manage-copy">
                   <strong className="block text-sm font-semibold text-text-primary">
-                    {row.name ?? row.source_platform ?? "Importação"}
+                    {row.name ?? (tab === "imports" ? platformLabel(row.source_platform) : row.source_platform) ?? "Importação"}
                   </strong>
                   <span className="text-xs text-text-secondary">
                     {tab === "imports"
-                      ? `${row.status} · ${row.current_stage ?? "aguardando"}`
+                      ? `${importStatusLabel(row.status)} · ${row.current_stage ?? "Aguardando processamento"}`
                       : tab === "pantry"
-                        ? `${row.quantity ?? "—"} ${row.unit ?? ""} · ${row.status}`
+                        ? `${row.quantity ?? "—"} ${row.unit ?? ""} · ${pantryStatusLabel(row.status)}`
                         : (row.description ??
                           row.type ??
                           (row.is_system ? "Sistema" : "Personalizada"))}
                   </span>
                   {row.error_message && (
-                    <small className="error-text block text-xs text-destructive mt-0.5">{row.error_message}</small>
+                    <small className="import-error-text block text-xs text-destructive mt-0.5">
+                      {importErrorMessage(row.error_message)}
+                    </small>
                   )}
                 </div>
               </div>
 
               {tab === "imports" ? (
-                <div className="flex gap-2">
+                <div className="import-row-actions flex gap-2">
                   {row.recipe_id && (
                     <a className="button secondary px-3 py-1.5 min-h-0 text-xs" href={`/receitas/${row.recipe_id}`}>
                       Abrir

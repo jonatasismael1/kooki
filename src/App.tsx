@@ -58,6 +58,7 @@ import {
   scheduleArchivedRecipeDeletion,
   undoArchiveRecipe,
 } from "./lib/recipe-revisions";
+import { importErrorMessage, importStatusLabel, platformLabel } from "./lib/import-status";
 import "./index.css";
 
 const OrganizerPage = lazy(() =>
@@ -356,7 +357,7 @@ function Login() {
         });
         return { error };
       },
-      "Conta criada. Verifique seu e-mail.",
+      "Conta criada. Você já pode entrar com sua senha.",
     );
   }
 
@@ -569,8 +570,7 @@ function Dashboard() {
   const navigate = useNavigate();
   const { activeJobs, startImport, activeList } = useApp();
   
-  const [usage, setUsage] = useState(0);
-  const [reviews, setReviews] = useState(0);
+  const [importIssues, setImportIssues] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [favorites, setFavorites] = useState<Recipe[]>([]);
   const [urlInput, setUrlInput] = useState("");
@@ -587,17 +587,15 @@ function Dashboard() {
 
   const loadDashboardData = async () => {
     if (!supabase) return;
-    
-    // Usage
-    const { data: usageVal } = await supabase.rpc("get_monthly_usage");
-    setUsage(Number(usageVal ?? 0));
 
-    // Reviews count
-    const { count } = await supabase
+    // Imports that need user attention
+    const { data: issueRows } = await supabase
       .from("recipe_import_jobs")
-      .select("*", { count: "exact", head: true })
-      .in("status", ["needs_review", "needs_manual_input", "failed"]);
-    setReviews(count ?? 0);
+      .select("id,status,current_stage,error_message,source_platform,created_at")
+      .in("status", ["needs_review", "needs_manual_input", "failed"])
+      .order("created_at", { ascending: false })
+      .limit(3);
+    setImportIssues(issueRows ?? []);
 
     // Categories
     const { data: catRows } = await supabase
@@ -766,36 +764,6 @@ function Dashboard() {
         </section>
       )}
 
-      {/* NEEDS REVIEW BANNER — só aparece quando há importações pendentes de revisão */}
-      {reviews > 0 && (
-        <button
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-            padding: "12px 16px",
-            background: "#fff8ed",
-            border: "1px solid #f0c070",
-            borderLeft: "4px solid var(--warning)",
-            borderRadius: "var(--radius-md)",
-            color: "#7a4d0e",
-            fontSize: "13px",
-            fontWeight: 500,
-            textAlign: "left",
-            cursor: "pointer",
-            width: "100%",
-          }}
-          onClick={() => navigate("/organizar?tab=imports")}
-        >
-          <span style={{ display: "flex", alignItems: "center", gap: "8px", flexGrow: 1 }}>
-            <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />
-            {reviews} {reviews === 1 ? "importação aguardando" : "importações aguardando"} revisão manual.
-          </span>
-          <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "2px", whiteSpace: "nowrap", flexShrink: 0 }}>Revisar <ChevronRight style={{ width: 14, height: 14 }} /></span>
-        </button>
-      )}
-
       {/* TODAY'S PLAN */}
       <section className="dashboard-card flex flex-col gap-3">
         <h2 className="text-lg">Para cozinhar hoje</h2>
@@ -913,15 +881,39 @@ function Dashboard() {
       {/* PANTRY SUGGESTIONS BANNER */}
       <PantrySuggestions />
 
-      {/* ACCOUNT LIMIT / PROGRESS */}
-      <section className="usage">
-        <div>
-          <span className="text-sm text-text-primary font-bold block">Plano gratuito</span>
-          <span className="text-xs text-text-secondary">Limite de importações mensais por IA</span>
-        </div>
-        <strong>{usage} / 15</strong>
-        <progress max="15" value={usage} />
-      </section>
+      {/* IMPORT ISSUES — intentionally placed at the end of the home screen */}
+      {importIssues.length > 0 && (
+        <section className="dashboard-card import-issues">
+          <div className="import-issues-header">
+            <span className="import-issues-icon">
+              <AlertTriangle className="w-4 h-4" />
+            </span>
+            <div>
+              <h2 className="text-lg">Importações precisam de atenção</h2>
+              <p className="text-xs text-text-secondary">
+                Revise as últimas falhas ou complete o conteúdo manualmente.
+              </p>
+            </div>
+          </div>
+          <div className="import-issues-list">
+            {importIssues.map((job) => {
+              const message = importErrorMessage(job.error_message);
+              return (
+                <article key={job.id}>
+                  <div>
+                    <strong>{platformLabel(job.source_platform)}</strong>
+                    <span>{importStatusLabel(job.status)}</span>
+                  </div>
+                  <p>{message || job.current_stage || "Abra a importação para ver o próximo passo."}</p>
+                </article>
+              );
+            })}
+          </div>
+          <button className="button secondary w-full" onClick={() => navigate("/organizar?tab=imports")}>
+            Ver importações <ChevronRight className="w-4 h-4" />
+          </button>
+        </section>
+      )}
     </div>
   );
 }
