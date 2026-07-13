@@ -1,5 +1,5 @@
 /* oxlint-disable eslint-plugin-react-refresh/only-export-components */
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { Suspense, createContext, lazy, useContext, useEffect, useMemo, useState } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -42,25 +42,39 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import { consolidateIngredients, type IngredientInput } from "./lib/shopping";
 import {
-  deleteLocalRecipe,
   getLocalRecipe,
   getLocalRecipes,
   saveLocalRecipe,
-  updateLocalRecipe,
 } from "./lib/local-store";
 import { LoadingOverlay, ToastViewport } from "./components/feedback";
 import { notify } from "./components/feedback-events";
 import { RecipeTools } from "./components/recipe-tools";
-import { OrganizerPage } from "./pages/OrganizerPage";
-import { PlanningPage } from "./pages/PlanningPage";
-import { CookModePage } from "./pages/CookModePage";
-import { SharedRecipePage } from "./pages/SharedRecipePage";
 import { readableQuantity, scaleQuantity } from "./lib/product";
 import { ConfirmDialog, BottomSheet, LoadingButton, PromptDialog } from "./components/ui";
-import { PantrySuggestions } from "./components/pantry-suggestions";
 import { PwaUpdateBanner } from "./components/pwa-update-banner";
+import {
+  archiveRecipe,
+  resumePendingRecipeDeletions,
+  scheduleArchivedRecipeDeletion,
+  undoArchiveRecipe,
+} from "./lib/recipe-revisions";
 import "./index.css";
 
+const OrganizerPage = lazy(() =>
+  import("./pages/OrganizerPage").then((module) => ({ default: module.OrganizerPage })),
+);
+const PlanningPage = lazy(() =>
+  import("./pages/PlanningPage").then((module) => ({ default: module.PlanningPage })),
+);
+const CookModePage = lazy(() =>
+  import("./pages/CookModePage").then((module) => ({ default: module.CookModePage })),
+);
+const SharedRecipePage = lazy(() => import("./pages/SharedRecipePage"));
+const RecipeEditPage = lazy(() => import("./pages/RecipeEditPage"));
+const RecipeVersionHistory = lazy(() => import("./components/recipe-version-history"));
+const PantrySuggestions = lazy(() =>
+  import("./components/pantry-suggestions").then((module) => ({ default: module.PantrySuggestions })),
+);
 
 
 type Recipe = {
@@ -87,14 +101,6 @@ type Ingredient = IngredientInput & {
 };
 
 type Step = { id: string; instruction: string; position: number };
-
-type RecipeEditDraft = {
-  title: string;
-  description: string;
-  servings: string;
-  ingredients: Ingredient[];
-  steps: Step[];
-};
 
 // Context for global state sharing (jobs, active list, theme)
 type AppContextType = {
@@ -293,7 +299,10 @@ function App() {
     <AppContext.Provider value={{ session, activeJobs, startImport, activeList, setActiveList, fetchActiveList, theme, setTheme }}>
       <BrowserRouter>
         <Routes>
-          <Route path="/compartilhada/:token" element={<SharedRecipePage />} />
+          <Route
+            path="/compartilhada/:token"
+            element={<Suspense fallback={<State title="Carregando receita…" />}><SharedRecipePage /></Suspense>}
+          />
           <Route
             path="/login"
             element={session ? <Navigate to="/" /> : <Login />}
@@ -463,6 +472,10 @@ function Shell({ session }: { session: Session | null }) {
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    void resumePendingRecipeDeletions().catch(() => undefined);
+  }, []);
+
   async function logout() {
     setLogoutConfirm(false);
     await supabase?.auth.signOut();
@@ -487,18 +500,21 @@ function Shell({ session }: { session: Session | null }) {
 
       {/* Main Content Area */}
       <main className="content">
-        <Routes>
-          <Route index element={<Dashboard />} />
-          <Route path="receitas" element={<Recipes />} />
-          <Route path="receitas/nova" element={<RecipeEditor />} />
-          <Route path="receitas/:id" element={<RecipeDetail />} />
-          <Route path="receitas/:id/cozinha" element={<CookModePage />} />
-          <Route path="organizar" element={<OrganizerPage />} />
-          <Route path="planejamento" element={<PlanningPage />} />
-          <Route path="compras" element={<Shopping />} />
-          <Route path="perfil" element={<Profile session={session} />} />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
+        <Suspense fallback={<State title="Carregando página…" />}>
+          <Routes>
+            <Route index element={<Dashboard />} />
+            <Route path="receitas" element={<Recipes />} />
+            <Route path="receitas/nova" element={<RecipeEditor />} />
+            <Route path="receitas/:id" element={<RecipeDetail />} />
+            <Route path="receitas/:id/editar" element={<RecipeEditPage />} />
+            <Route path="receitas/:id/cozinha" element={<CookModePage />} />
+            <Route path="organizar" element={<OrganizerPage />} />
+            <Route path="planejamento" element={<PlanningPage />} />
+            <Route path="compras" element={<Shopping />} />
+            <Route path="perfil" element={<Profile session={session} />} />
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
+        </Suspense>
       </main>
 
       {/* Mobile Bottom Bar */}
@@ -947,7 +963,7 @@ function Recipes() {
 
   useEffect(() => {
     if (!supabase) {
-      setItems(getLocalRecipes());
+      setItems(getLocalRecipes().filter((recipe) => recipe.status !== "archived"));
       setLoading(false);
       return;
     }
@@ -1418,8 +1434,6 @@ function RecipeDetail() {
     !supabase && id ? getLocalRecipe(id) : null,
   );
   const [targetServings, setTargetServings] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<RecipeEditDraft | null>(null);
-  const [savingEdit, setSavingEdit] = useState(false);
   
   // Custom dialog state instead of window.confirm
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -1446,157 +1460,40 @@ function RecipeDetail() {
 
   async function remove() {
     setDeleteConfirm(false);
-    if (supabase) {
-      const { error } = await supabase.from("recipes").delete().eq("id", recipe.id);
-      if (error) {
-        notify("error", "Não foi possível excluir", error.message);
-        return;
-      }
-    } else {
-      deleteLocalRecipe(recipe.id);
+    try {
+      const previousStatus = recipe.status;
+      await archiveRecipe(recipe.id);
+      const cancelPermanentDeletion = scheduleArchivedRecipeDeletion(recipe.id);
+      notify(
+        "success",
+        "Receita excluída",
+        "Você pode desfazer esta ação por alguns segundos.",
+        "Desfazer",
+        () => {
+          cancelPermanentDeletion();
+          void undoArchiveRecipe(recipe.id, previousStatus)
+            .then(() => notify("success", "Exclusão desfeita"))
+            .catch((undoError) =>
+              notify(
+                "error",
+                "Não foi possível desfazer",
+                undoError instanceof Error ? undoError.message : "Tente novamente.",
+              ),
+            );
+        },
+      );
+      navigate("/receitas");
+    } catch (removeError) {
+      notify(
+        "error",
+        "Não foi possível excluir",
+        removeError instanceof Error ? removeError.message : "Tente novamente.",
+      );
     }
-    notify("success", "Receita excluída");
-    navigate("/receitas");
   }
 
   function startEditing() {
-    setEditDraft({
-      title: recipe.title,
-      description: recipe.description ?? "",
-      servings: recipe.servings?.toString() ?? "",
-      ingredients: [...(recipe.recipe_ingredients ?? [])]
-        .sort((a, b) => a.position - b.position)
-        .map((ingredient) => ({ ...ingredient })),
-      steps: [...(recipe.recipe_steps ?? [])]
-        .sort((a, b) => a.position - b.position)
-        .map((step) => ({ ...step })),
-    });
-  }
-
-  async function saveManualEdit() {
-    if (!editDraft?.title.trim()) {
-      notify("error", "Informe o título da receita");
-      return;
-    }
-
-    setSavingEdit(true);
-    const servings = editDraft.servings ? Number(editDraft.servings) : null;
-    if (servings !== null && (!Number.isFinite(servings) || servings <= 0)) {
-      setSavingEdit(false);
-      notify("error", "Informe uma quantidade de porções maior que zero");
-      return;
-    }
-    const originalIngredients = new Map(
-      (recipe.recipe_ingredients ?? []).map((ingredient) => [ingredient.id, ingredient]),
-    );
-    const ingredients = editDraft.ingredients
-      .filter((ingredient) => ingredient.name.trim())
-      .map((ingredient, position) => {
-        const original = originalIngredients.get(ingredient.id);
-        const quantityText = ingredient.quantity_text?.trim() || null;
-        const quantityChanged = quantityText !== (original?.quantity_text ?? null);
-        return {
-          ...ingredient,
-          name: ingredient.name.trim(),
-          normalized_name: ingredient.name.trim().toLocaleLowerCase("pt-BR"),
-          quantity_text: quantityText,
-          quantity: quantityChanged ? null : (original?.quantity ?? ingredient.quantity),
-          unit: quantityChanged ? null : (original?.unit ?? ingredient.unit ?? null),
-          normalized_unit: quantityChanged
-            ? null
-            : (original?.normalized_unit ?? ingredient.normalized_unit),
-          notes: ingredient.notes?.trim() || null,
-          position,
-        };
-      });
-    const steps = editDraft.steps
-      .filter((step) => step.instruction.trim())
-      .map((step, position) => ({ ...step, instruction: step.instruction.trim(), position }));
-
-    try {
-      if (supabase) {
-        const ingredientPayload = ingredients.map((ingredient) => ({
-          id: ingredient.id,
-          recipe_id: recipe.id,
-          name: ingredient.name,
-          normalized_name: ingredient.normalized_name,
-          quantity_text: ingredient.quantity_text,
-          quantity: ingredient.quantity,
-          unit: ingredient.unit ?? null,
-          normalized_unit: ingredient.normalized_unit,
-          notes: ingredient.notes,
-          sector: ingredient.sector || "Outros",
-          position: ingredient.position,
-        }));
-        const stepPayload = steps.map((step) => ({
-          id: step.id,
-          recipe_id: recipe.id,
-          instruction: step.instruction,
-          position: step.position,
-        }));
-        const removedIngredientIds = (recipe.recipe_ingredients ?? [])
-          .filter((ingredient) => !ingredients.some((item) => item.id === ingredient.id))
-          .map((ingredient) => ingredient.id);
-        const removedStepIds = (recipe.recipe_steps ?? [])
-          .filter((step) => !steps.some((item) => item.id === step.id))
-          .map((step) => step.id);
-
-        if (ingredientPayload.length) {
-          const { error } = await supabase.from("recipe_ingredients").upsert(ingredientPayload);
-          if (error) throw error;
-        }
-        if (stepPayload.length) {
-          const { error } = await supabase.from("recipe_steps").upsert(stepPayload);
-          if (error) throw error;
-        }
-        if (removedIngredientIds.length) {
-          const { error } = await supabase
-            .from("recipe_ingredients")
-            .delete()
-            .in("id", removedIngredientIds);
-          if (error) throw error;
-        }
-        if (removedStepIds.length) {
-          const { error } = await supabase.from("recipe_steps").delete().in("id", removedStepIds);
-          if (error) throw error;
-        }
-
-        const { error } = await supabase
-          .from("recipes")
-          .update({
-            title: editDraft.title.trim(),
-            description: editDraft.description.trim() || null,
-            servings,
-            status: "ready",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", recipe.id);
-        if (error) throw error;
-      }
-
-      const updatedRecipe: Recipe = {
-        ...recipe,
-        title: editDraft.title.trim(),
-        description: editDraft.description.trim() || null,
-        servings,
-        status: "ready",
-        recipe_ingredients: ingredients,
-        recipe_steps: steps,
-      };
-      if (!supabase) updateLocalRecipe(updatedRecipe as Parameters<typeof updateLocalRecipe>[0]);
-      setRecipe(updatedRecipe);
-      setTargetServings(servings);
-      setEditDraft(null);
-      notify("success", "Receita atualizada", "As alterações manuais foram salvas.");
-    } catch (error) {
-      notify(
-        "error",
-        "Não foi possível salvar as alterações",
-        error instanceof Error ? error.message : "Tente novamente.",
-      );
-    } finally {
-      setSavingEdit(false);
-    }
+    navigate(`/receitas/${recipe.id}/editar`);
   }
 
   return (
@@ -1609,7 +1506,6 @@ function RecipeDetail() {
               className="icon-button"
               aria-label="Editar receita"
               onClick={startEditing}
-              disabled={Boolean(editDraft)}
             >
               <Edit3Icon className="w-5 h-5" />
             </button>
@@ -1625,256 +1521,13 @@ function RecipeDetail() {
       />
 
       {recipe.status === "needs_review" && (
-        <div className="notice mb-4">
+        <div className="notice mb-4 review-notice">
           <AlertTriangle className="w-5 h-5" />
-          Algumas informações parecem incompletas. Por favor, revise as etapas.
+          <span>Algumas informações parecem incompletas. Os campos que precisam de atenção serão destacados no editor.</span>
+          <button className="button secondary" onClick={startEditing}>Revisar agora</button>
         </div>
       )}
 
-      {editDraft ? (
-        <section className="form-card recipe-manual-editor" aria-label="Editar receita manualmente">
-          <div>
-            <span className="eyebrow">Edição manual</span>
-            <h2 className="mb-1">Revise a receita gerada</h2>
-            <p className="text-sm text-text-secondary">
-              Ajuste os campos abaixo. Ao salvar, a receita será marcada como revisada.
-            </p>
-          </div>
-
-          <label>
-            Título da receita
-            <input
-              value={editDraft.title}
-              onChange={(event) =>
-                setEditDraft((current) => current && { ...current, title: event.target.value })
-              }
-              disabled={savingEdit}
-            />
-          </label>
-          <label>
-            Descrição
-            <textarea
-              rows={3}
-              value={editDraft.description}
-              onChange={(event) =>
-                setEditDraft((current) =>
-                  current && { ...current, description: event.target.value },
-                )
-              }
-              disabled={savingEdit}
-            />
-          </label>
-          <label>
-            Porções
-            <input
-              type="number"
-              min="1"
-              step="1"
-              inputMode="numeric"
-              value={editDraft.servings}
-              onChange={(event) =>
-                setEditDraft((current) => current && { ...current, servings: event.target.value })
-              }
-              disabled={savingEdit}
-            />
-          </label>
-
-          <div className="recipe-editor-group">
-            <div className="recipe-editor-heading">
-              <h3>Ingredientes</h3>
-              <button
-                type="button"
-                className="button secondary"
-                disabled={savingEdit}
-                onClick={() =>
-                  setEditDraft((current) =>
-                    current && {
-                      ...current,
-                      ingredients: [
-                        ...current.ingredients,
-                        {
-                          id: crypto.randomUUID(),
-                          name: "",
-                          normalized_name: null,
-                          quantity: null,
-                          normalized_unit: null,
-                          quantity_text: null,
-                          notes: null,
-                          sector: "Outros",
-                          position: current.ingredients.length,
-                        },
-                      ],
-                    },
-                  )
-                }
-              >
-                <Plus className="w-4 h-4" /> Adicionar
-              </button>
-            </div>
-            {editDraft.ingredients.length ? (
-              <div className="recipe-editor-list">
-                {editDraft.ingredients.map((ingredient, index) => (
-                  <div className="recipe-editor-row" key={ingredient.id}>
-                    <label>
-                      Quantidade
-                      <input
-                        value={ingredient.quantity_text ?? ""}
-                        placeholder="Ex.: 2 xícaras"
-                        disabled={savingEdit}
-                        onChange={(event) =>
-                          setEditDraft((current) =>
-                            current && {
-                              ...current,
-                              ingredients: current.ingredients.map((item, itemIndex) =>
-                                itemIndex === index
-                                  ? { ...item, quantity_text: event.target.value }
-                                  : item,
-                              ),
-                            },
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Ingrediente
-                      <input
-                        value={ingredient.name}
-                        placeholder="Ex.: farinha de trigo"
-                        disabled={savingEdit}
-                        onChange={(event) =>
-                          setEditDraft((current) =>
-                            current && {
-                              ...current,
-                              ingredients: current.ingredients.map((item, itemIndex) =>
-                                itemIndex === index ? { ...item, name: event.target.value } : item,
-                              ),
-                            },
-                          )
-                        }
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="icon-button danger"
-                      aria-label={`Remover ingrediente ${index + 1}`}
-                      disabled={savingEdit}
-                      onClick={() =>
-                        setEditDraft((current) =>
-                          current && {
-                            ...current,
-                            ingredients: current.ingredients.filter(
-                              (_, itemIndex) => itemIndex !== index,
-                            ),
-                          },
-                        )
-                      }
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-text-secondary">Nenhum ingrediente. Adicione o primeiro.</p>
-            )}
-          </div>
-
-          <div className="recipe-editor-group">
-            <div className="recipe-editor-heading">
-              <h3>Modo de preparo</h3>
-              <button
-                type="button"
-                className="button secondary"
-                disabled={savingEdit}
-                onClick={() =>
-                  setEditDraft((current) =>
-                    current && {
-                      ...current,
-                      steps: [
-                        ...current.steps,
-                        {
-                          id: crypto.randomUUID(),
-                          instruction: "",
-                          position: current.steps.length,
-                        },
-                      ],
-                    },
-                  )
-                }
-              >
-                <Plus className="w-4 h-4" /> Adicionar
-              </button>
-            </div>
-            {editDraft.steps.length ? (
-              <div className="recipe-editor-list">
-                {editDraft.steps.map((step, index) => (
-                  <div className="recipe-editor-row recipe-editor-step" key={step.id}>
-                    <span className="recipe-step-number">{index + 1}</span>
-                    <label>
-                      <span className="sr-only">Etapa {index + 1}</span>
-                      <textarea
-                        rows={2}
-                        value={step.instruction}
-                        placeholder="Descreva esta etapa"
-                        disabled={savingEdit}
-                        onChange={(event) =>
-                          setEditDraft((current) =>
-                            current && {
-                              ...current,
-                              steps: current.steps.map((item, itemIndex) =>
-                                itemIndex === index
-                                  ? { ...item, instruction: event.target.value }
-                                  : item,
-                              ),
-                            },
-                          )
-                        }
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="icon-button danger"
-                      aria-label={`Remover etapa ${index + 1}`}
-                      disabled={savingEdit}
-                      onClick={() =>
-                        setEditDraft((current) =>
-                          current && {
-                            ...current,
-                            steps: current.steps.filter((_, itemIndex) => itemIndex !== index),
-                          },
-                        )
-                      }
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-text-secondary">Nenhuma etapa. Adicione a primeira.</p>
-            )}
-          </div>
-
-          <div className="recipe-editor-actions">
-            <button
-              type="button"
-              className="button secondary"
-              onClick={() => setEditDraft(null)}
-              disabled={savingEdit}
-            >
-              Cancelar
-            </button>
-            <LoadingButton
-              loading={savingEdit}
-              disabled={!editDraft.title.trim() || savingEdit}
-              onClick={saveManualEdit}
-            >
-              Salvar alterações
-            </LoadingButton>
-          </div>
-        </section>
-      ) : (
-        <>
       {recipe.description && <p className="text-text-secondary text-lg font-light italic">{recipe.description}</p>}
 
       {recipe.source_url && (
@@ -1991,13 +1644,15 @@ function RecipeDetail() {
           setRecipe((current) => (current ? { ...current, is_favorite: value } : current))
         }
       />
-        </>
-      )}
+      <RecipeVersionHistory recipe={recipe} onRestored={(restored) => {
+        setRecipe(restored);
+        setTargetServings(restored.servings);
+      }} />
 
       <ConfirmDialog
         isOpen={deleteConfirm}
         title="Excluir Receita"
-        description="Tem certeza que deseja excluir esta receita definitivamente do seu acervo?"
+        description="A receita será removida do acervo. Logo após a exclusão, você poderá desfazer a ação por alguns segundos."
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
         isDestructive={true}

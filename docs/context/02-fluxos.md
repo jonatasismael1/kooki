@@ -10,3 +10,6 @@
 8. Para links sociais/YouTube, o worker pede áudio MP3 a 64 kbps ao Cobalt e cai para vídeo 720p; `tunnel`, `redirect`, `picker` e erros têm tratamento explícito.
 9. O worker transmite a mídia ao ffmpeg, normaliza para mono/16 kHz/64 kbps, divide em segmentos de 10 minutos e persiste cada transcrição para retomada.
 10. O frontend acompanha por Realtime com polling; falhas oferecem legenda, texto manual, upload ou nova tentativa.
+11. A revisão manual usa rota dedicada, rascunho local automático, avisos por campo e proteção ao sair.
+12. Antes de salvar ou restaurar uma edição, o banco preserva a versão atual; a receita original gerada pela IA permanece restaurável.
+13. Excluir uma receita primeiro a arquiva e oferece “Desfazer”; após a janela de segurança, a exclusão definitiva é retomada mesmo se o app tiver sido fechado.

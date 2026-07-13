@@ -256,6 +256,22 @@ function mediaExtractor(cobaltUrl: string, cobaltKey?: string): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            "react-vendor": ["react", "react-dom", "react-router-dom"],
+            "supabase-vendor": ["@supabase/supabase-js"],
+            "ui-vendor": [
+              "lucide-react",
+              "@radix-ui/react-dialog",
+              "@radix-ui/react-dropdown-menu",
+              "@radix-ui/react-slot",
+            ],
+          },
+        },
+      },
+    },
     plugins: [
       mediaExtractor(env.COBALT_API_URL, env.COBALT_API_KEY),
       react(),

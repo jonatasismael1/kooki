@@ -12,6 +12,9 @@
 - Correção escolhida: frontend chama somente a Edge Function para enfileirar; um worker Node/ffmpeg independente consome Cobalt e Storage por streaming, segmenta áudio e persiste progresso. A Edge deixa de baixar ou transcrever mídia.
 
 - React/Vite/TypeScript mobile-first, PWA, Supabase Auth/Postgres/Storage/Edge Functions e OpenRouter.
+- Editor de receita em rota dedicada com autosave local, proteção contra saída, reordenação e revisão orientada pelos avisos de confiança.
+- Histórico restaurável preserva a receita original gerada pela IA e versões anteriores; exclusão de receita oferece desfazer antes da remoção definitiva.
+- Rotas secundárias e dependências principais são distribuídas em chunks separados no build.
 - Importação por texto/link/áudio/vídeo; Instagram/TikTok local usa Cobalt configurável ou `yt-dlp`, depois OpenRouter STT.
 - Acervo, Modo Cozinha básico, compras, temas, feedback global, RLS inicial e plano gratuito.
 - Repositório local ainda sem histórico Git no início desta fase.
