@@ -46,6 +46,7 @@ import {
   getLocalRecipe,
   getLocalRecipes,
   saveLocalRecipe,
+  updateLocalRecipe,
 } from "./lib/local-store";
 import { LoadingOverlay, ToastViewport } from "./components/feedback";
 import { notify } from "./components/feedback-events";
@@ -86,6 +87,14 @@ type Ingredient = IngredientInput & {
 };
 
 type Step = { id: string; instruction: string; position: number };
+
+type RecipeEditDraft = {
+  title: string;
+  description: string;
+  servings: string;
+  ingredients: Ingredient[];
+  steps: Step[];
+};
 
 // Context for global state sharing (jobs, active list, theme)
 type AppContextType = {
@@ -1409,6 +1418,8 @@ function RecipeDetail() {
     !supabase && id ? getLocalRecipe(id) : null,
   );
   const [targetServings, setTargetServings] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState<RecipeEditDraft | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   
   // Custom dialog state instead of window.confirm
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -1448,18 +1459,168 @@ function RecipeDetail() {
     navigate("/receitas");
   }
 
+  function startEditing() {
+    setEditDraft({
+      title: recipe.title,
+      description: recipe.description ?? "",
+      servings: recipe.servings?.toString() ?? "",
+      ingredients: [...(recipe.recipe_ingredients ?? [])]
+        .sort((a, b) => a.position - b.position)
+        .map((ingredient) => ({ ...ingredient })),
+      steps: [...(recipe.recipe_steps ?? [])]
+        .sort((a, b) => a.position - b.position)
+        .map((step) => ({ ...step })),
+    });
+  }
+
+  async function saveManualEdit() {
+    if (!editDraft?.title.trim()) {
+      notify("error", "Informe o título da receita");
+      return;
+    }
+
+    setSavingEdit(true);
+    const servings = editDraft.servings ? Number(editDraft.servings) : null;
+    if (servings !== null && (!Number.isFinite(servings) || servings <= 0)) {
+      setSavingEdit(false);
+      notify("error", "Informe uma quantidade de porções maior que zero");
+      return;
+    }
+    const originalIngredients = new Map(
+      (recipe.recipe_ingredients ?? []).map((ingredient) => [ingredient.id, ingredient]),
+    );
+    const ingredients = editDraft.ingredients
+      .filter((ingredient) => ingredient.name.trim())
+      .map((ingredient, position) => {
+        const original = originalIngredients.get(ingredient.id);
+        const quantityText = ingredient.quantity_text?.trim() || null;
+        const quantityChanged = quantityText !== (original?.quantity_text ?? null);
+        return {
+          ...ingredient,
+          name: ingredient.name.trim(),
+          normalized_name: ingredient.name.trim().toLocaleLowerCase("pt-BR"),
+          quantity_text: quantityText,
+          quantity: quantityChanged ? null : (original?.quantity ?? ingredient.quantity),
+          unit: quantityChanged ? null : (original?.unit ?? ingredient.unit ?? null),
+          normalized_unit: quantityChanged
+            ? null
+            : (original?.normalized_unit ?? ingredient.normalized_unit),
+          notes: ingredient.notes?.trim() || null,
+          position,
+        };
+      });
+    const steps = editDraft.steps
+      .filter((step) => step.instruction.trim())
+      .map((step, position) => ({ ...step, instruction: step.instruction.trim(), position }));
+
+    try {
+      if (supabase) {
+        const ingredientPayload = ingredients.map((ingredient) => ({
+          id: ingredient.id,
+          recipe_id: recipe.id,
+          name: ingredient.name,
+          normalized_name: ingredient.normalized_name,
+          quantity_text: ingredient.quantity_text,
+          quantity: ingredient.quantity,
+          unit: ingredient.unit ?? null,
+          normalized_unit: ingredient.normalized_unit,
+          notes: ingredient.notes,
+          sector: ingredient.sector || "Outros",
+          position: ingredient.position,
+        }));
+        const stepPayload = steps.map((step) => ({
+          id: step.id,
+          recipe_id: recipe.id,
+          instruction: step.instruction,
+          position: step.position,
+        }));
+        const removedIngredientIds = (recipe.recipe_ingredients ?? [])
+          .filter((ingredient) => !ingredients.some((item) => item.id === ingredient.id))
+          .map((ingredient) => ingredient.id);
+        const removedStepIds = (recipe.recipe_steps ?? [])
+          .filter((step) => !steps.some((item) => item.id === step.id))
+          .map((step) => step.id);
+
+        if (ingredientPayload.length) {
+          const { error } = await supabase.from("recipe_ingredients").upsert(ingredientPayload);
+          if (error) throw error;
+        }
+        if (stepPayload.length) {
+          const { error } = await supabase.from("recipe_steps").upsert(stepPayload);
+          if (error) throw error;
+        }
+        if (removedIngredientIds.length) {
+          const { error } = await supabase
+            .from("recipe_ingredients")
+            .delete()
+            .in("id", removedIngredientIds);
+          if (error) throw error;
+        }
+        if (removedStepIds.length) {
+          const { error } = await supabase.from("recipe_steps").delete().in("id", removedStepIds);
+          if (error) throw error;
+        }
+
+        const { error } = await supabase
+          .from("recipes")
+          .update({
+            title: editDraft.title.trim(),
+            description: editDraft.description.trim() || null,
+            servings,
+            status: "ready",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", recipe.id);
+        if (error) throw error;
+      }
+
+      const updatedRecipe: Recipe = {
+        ...recipe,
+        title: editDraft.title.trim(),
+        description: editDraft.description.trim() || null,
+        servings,
+        status: "ready",
+        recipe_ingredients: ingredients,
+        recipe_steps: steps,
+      };
+      if (!supabase) updateLocalRecipe(updatedRecipe as Parameters<typeof updateLocalRecipe>[0]);
+      setRecipe(updatedRecipe);
+      setTargetServings(servings);
+      setEditDraft(null);
+      notify("success", "Receita atualizada", "As alterações manuais foram salvas.");
+    } catch (error) {
+      notify(
+        "error",
+        "Não foi possível salvar as alterações",
+        error instanceof Error ? error.message : "Tente novamente.",
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4 pb-12">
       <Header
         title={recipe.title}
         action={
-          <button
-            className="icon-button danger"
-            aria-label="Excluir receita"
-            onClick={() => setDeleteConfirm(true)}
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="icon-button"
+              aria-label="Editar receita"
+              onClick={startEditing}
+              disabled={Boolean(editDraft)}
+            >
+              <Edit3Icon className="w-5 h-5" />
+            </button>
+            <button
+              className="icon-button danger"
+              aria-label="Excluir receita"
+              onClick={() => setDeleteConfirm(true)}
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
         }
       />
 
@@ -1470,6 +1631,250 @@ function RecipeDetail() {
         </div>
       )}
 
+      {editDraft ? (
+        <section className="form-card recipe-manual-editor" aria-label="Editar receita manualmente">
+          <div>
+            <span className="eyebrow">Edição manual</span>
+            <h2 className="mb-1">Revise a receita gerada</h2>
+            <p className="text-sm text-text-secondary">
+              Ajuste os campos abaixo. Ao salvar, a receita será marcada como revisada.
+            </p>
+          </div>
+
+          <label>
+            Título da receita
+            <input
+              value={editDraft.title}
+              onChange={(event) =>
+                setEditDraft((current) => current && { ...current, title: event.target.value })
+              }
+              disabled={savingEdit}
+            />
+          </label>
+          <label>
+            Descrição
+            <textarea
+              rows={3}
+              value={editDraft.description}
+              onChange={(event) =>
+                setEditDraft((current) =>
+                  current && { ...current, description: event.target.value },
+                )
+              }
+              disabled={savingEdit}
+            />
+          </label>
+          <label>
+            Porções
+            <input
+              type="number"
+              min="1"
+              step="1"
+              inputMode="numeric"
+              value={editDraft.servings}
+              onChange={(event) =>
+                setEditDraft((current) => current && { ...current, servings: event.target.value })
+              }
+              disabled={savingEdit}
+            />
+          </label>
+
+          <div className="recipe-editor-group">
+            <div className="recipe-editor-heading">
+              <h3>Ingredientes</h3>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={savingEdit}
+                onClick={() =>
+                  setEditDraft((current) =>
+                    current && {
+                      ...current,
+                      ingredients: [
+                        ...current.ingredients,
+                        {
+                          id: crypto.randomUUID(),
+                          name: "",
+                          normalized_name: null,
+                          quantity: null,
+                          normalized_unit: null,
+                          quantity_text: null,
+                          notes: null,
+                          sector: "Outros",
+                          position: current.ingredients.length,
+                        },
+                      ],
+                    },
+                  )
+                }
+              >
+                <Plus className="w-4 h-4" /> Adicionar
+              </button>
+            </div>
+            {editDraft.ingredients.length ? (
+              <div className="recipe-editor-list">
+                {editDraft.ingredients.map((ingredient, index) => (
+                  <div className="recipe-editor-row" key={ingredient.id}>
+                    <label>
+                      Quantidade
+                      <input
+                        value={ingredient.quantity_text ?? ""}
+                        placeholder="Ex.: 2 xícaras"
+                        disabled={savingEdit}
+                        onChange={(event) =>
+                          setEditDraft((current) =>
+                            current && {
+                              ...current,
+                              ingredients: current.ingredients.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, quantity_text: event.target.value }
+                                  : item,
+                              ),
+                            },
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Ingrediente
+                      <input
+                        value={ingredient.name}
+                        placeholder="Ex.: farinha de trigo"
+                        disabled={savingEdit}
+                        onChange={(event) =>
+                          setEditDraft((current) =>
+                            current && {
+                              ...current,
+                              ingredients: current.ingredients.map((item, itemIndex) =>
+                                itemIndex === index ? { ...item, name: event.target.value } : item,
+                              ),
+                            },
+                          )
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="icon-button danger"
+                      aria-label={`Remover ingrediente ${index + 1}`}
+                      disabled={savingEdit}
+                      onClick={() =>
+                        setEditDraft((current) =>
+                          current && {
+                            ...current,
+                            ingredients: current.ingredients.filter(
+                              (_, itemIndex) => itemIndex !== index,
+                            ),
+                          },
+                        )
+                      }
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-text-secondary">Nenhum ingrediente. Adicione o primeiro.</p>
+            )}
+          </div>
+
+          <div className="recipe-editor-group">
+            <div className="recipe-editor-heading">
+              <h3>Modo de preparo</h3>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={savingEdit}
+                onClick={() =>
+                  setEditDraft((current) =>
+                    current && {
+                      ...current,
+                      steps: [
+                        ...current.steps,
+                        {
+                          id: crypto.randomUUID(),
+                          instruction: "",
+                          position: current.steps.length,
+                        },
+                      ],
+                    },
+                  )
+                }
+              >
+                <Plus className="w-4 h-4" /> Adicionar
+              </button>
+            </div>
+            {editDraft.steps.length ? (
+              <div className="recipe-editor-list">
+                {editDraft.steps.map((step, index) => (
+                  <div className="recipe-editor-row recipe-editor-step" key={step.id}>
+                    <span className="recipe-step-number">{index + 1}</span>
+                    <label>
+                      <span className="sr-only">Etapa {index + 1}</span>
+                      <textarea
+                        rows={2}
+                        value={step.instruction}
+                        placeholder="Descreva esta etapa"
+                        disabled={savingEdit}
+                        onChange={(event) =>
+                          setEditDraft((current) =>
+                            current && {
+                              ...current,
+                              steps: current.steps.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, instruction: event.target.value }
+                                  : item,
+                              ),
+                            },
+                          )
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="icon-button danger"
+                      aria-label={`Remover etapa ${index + 1}`}
+                      disabled={savingEdit}
+                      onClick={() =>
+                        setEditDraft((current) =>
+                          current && {
+                            ...current,
+                            steps: current.steps.filter((_, itemIndex) => itemIndex !== index),
+                          },
+                        )
+                      }
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-text-secondary">Nenhuma etapa. Adicione a primeira.</p>
+            )}
+          </div>
+
+          <div className="recipe-editor-actions">
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => setEditDraft(null)}
+              disabled={savingEdit}
+            >
+              Cancelar
+            </button>
+            <LoadingButton
+              loading={savingEdit}
+              disabled={!editDraft.title.trim() || savingEdit}
+              onClick={saveManualEdit}
+            >
+              Salvar alterações
+            </LoadingButton>
+          </div>
+        </section>
+      ) : (
+        <>
       {recipe.description && <p className="text-text-secondary text-lg font-light italic">{recipe.description}</p>}
 
       {recipe.source_url && (
@@ -1523,7 +1928,7 @@ function RecipeDetail() {
           <h2>Ingredientes</h2>
           {recipe.recipe_ingredients?.length ? (
             <ul className="check-list">
-              {recipe.recipe_ingredients
+              {[...recipe.recipe_ingredients]
                 .sort((a, b) => a.position - b.position)
                 .map((ingredient) => {
                   const adjusted = scaleQuantity(
@@ -1555,7 +1960,7 @@ function RecipeDetail() {
           <h2>Modo de preparo</h2>
           {recipe.recipe_steps?.length ? (
             <ol className="flex flex-col gap-4 list-decimal pl-4">
-              {recipe.recipe_steps
+              {[...recipe.recipe_steps]
                 .sort((a, b) => a.position - b.position)
                 .map((step) => (
                   <li key={step.id} className="pl-2 text-text-primary leading-relaxed text-sm">
@@ -1586,6 +1991,8 @@ function RecipeDetail() {
           setRecipe((current) => (current ? { ...current, is_favorite: value } : current))
         }
       />
+        </>
+      )}
 
       <ConfirmDialog
         isOpen={deleteConfirm}
